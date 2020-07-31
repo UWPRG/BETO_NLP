@@ -22,6 +22,7 @@ class API_data_generator():
             API_list(list, required): list of API keys generated from Scopus
             term_list(list, required): list of search terms looked for in papers by the API
             cache_path(str, required): path for dumping the cache data
+            output_path(str, required): path to store the downloaded piis
         """
         self.API_list = API_list
         self.term_list = term_list
@@ -93,14 +94,6 @@ class API_data_generator():
         search_terms = self.build_search_terms()
         dict1 = {}
         #This loop goes through and sets up a dictionary key with an ISSN number
-        # issn_list = API_data_generator.make_jlist(jlist_url = 'https://www.elsevier.com/__data/promis_misc/sd-content/journals/jnlactivesubject.xls', \
-        #                 journal_strings = ['chemistry','energy','molecular','atomic','chemical','biochem', \
-        #                                    'organic','polymer','chemical engineering','biotech','colloid'])['ISSN'].values
-        #
-        #
-        # journal_list = API_data_generator.make_jlist(jlist_url = 'https://www.elsevier.com/__data/promis_misc/sd-content/journals/jnlactivesubject.xls', \
-        #                 journal_strings = ['chemistry','energy','molecular','atomic','chemical','biochem', \
-        #                                    'organic','polymer','chemical engineering','biotech','colloid'])['Journal_Title'].values
 
         for issn in issn_list:
 
@@ -148,8 +141,6 @@ class API_data_generator():
                 journal_list[j] = journal_list[j].replace('/','_')
             elif ' ' in journal_list[j]:
                 journal_list[j] = journal_list[j].replace(' ','_')
-
-
 
         # Build the dictionary that can be used to sequentially query elsevier for different journals and years
         query_dict = self.build_query_dict(issn_list,year_list)
@@ -239,6 +230,11 @@ class API_data_generator():
         return data
 
     def make_dataframe(self, dataframe_path):
+        """
+        This function takes the output path where the piis are stored and creates a dataframe for all the pii, doi, abstracts and other stuff
+        Parameters:
+            dataframe_path(str, required): the path to store the dataframe.
+        """
         directory_list = os.listdir(self.output_path)
         pub_year = []
         pii = []
