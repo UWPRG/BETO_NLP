@@ -69,8 +69,11 @@ class PreProcessor():
                         self.dropped_idxs.append(i)
                     else:
                         self.clean_abstracts.append(abstract)
-            if warned:
+            if warned or len(self.dropped_idxs) > 0:
+                sys.stdout.write("\r\033[K"+"WARNING: SOME ABSTRACTS WERE DROPPED DUE TO LENGTH. CHECK dropped_idxs FOR IDX NUMBERS.")
+            elif warned:
                 print('\n')
+
 
         self.entity_to_cid = {}
         self.cid_to_synonyms = {}
@@ -191,7 +194,7 @@ class PreProcessor():
                     replacement_delta = len(replacement_name) - (stop - start)
                     abstract = abstract[:start+index_change] + replacement_name + abstract[stop+index_change:]
                 index_change += replacement_delta
-                self.entities_per_abstract[i].append((replacement_name, start+index_change-replacement_delta, stop+index_change))
+                self.entities_per_abstract[i].append((replacement_name, start+index_change-replacement_delta, stop+index_change, name))
             if verbose:
                 print(abstract)
                 print('\n')
