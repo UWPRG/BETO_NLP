@@ -347,7 +347,7 @@ class PreProcessor():
                 else:
                     clean_abstract = ' '.join(info)
 
-        clean_abstract = self.remove_copywrite(clean_abstract)
+        clean_abstract = self.remove_symbols(clean_abstract)
 
         return clean_abstract
 
