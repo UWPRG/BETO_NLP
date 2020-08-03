@@ -351,7 +351,7 @@ class PreProcessor():
 
         return clean_abstract
 
-    def remove_copywrite(self, abstract):
+    def remove_symbols(self, abstract):
         """
         This function takes an abstract and removes the copywrite information
         followed by the Elsevier text and publication year and returns a clean
@@ -365,6 +365,11 @@ class PreProcessor():
         """
 
         split = abstract.split()
+
+        if '®' in split:
+            temp = list(split)
+            del temp[temp.index('®')]
+            split = "".join(temp)
 
         if '©' in split:
             if split[0] != '©':
