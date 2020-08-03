@@ -366,10 +366,7 @@ class PreProcessor():
 
         split = abstract.split()
 
-        if '®' in split:
-            temp = list(split)
-            del temp[temp.index('®')]
-            split = "".join(temp)
+
 
         if '©' in split:
             if split[0] != '©':
@@ -388,8 +385,15 @@ class PreProcessor():
                 else:
                     del split[0:2]
                     clean_abstract = ' '.join(split)
+
+
         else:
             clean_abstract = abstract
+
+        if '®' in clean_abstract:
+            temp = list(clean_abstract)
+            del temp[temp.index('®')]
+            clean_abstract = "".join(temp)
 
         if clean_abstract.endswith(' Crown Copywrite'):
             clean_abstract.replace(' Crown Copywrite', '')
