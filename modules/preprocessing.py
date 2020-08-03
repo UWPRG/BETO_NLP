@@ -8,6 +8,7 @@ import string
 import pickle
 import numpy as np
 import pandas as pd
+from tqdm import trange
 
 import pubchempy as pcp
 from chemdataextractor import Document
@@ -135,73 +136,109 @@ class PreProcessor():
     literature" (10.1038/s41586-019-1335-8)
     """
 
-    def tokenize(self, keep_sentences=False, exclude_punct=False):
+    def tokenize(self, texts='default', entities='default', use_entities=True):
         """
-        Takes the set of normalized texts and tokenizes them.
+        Takes the set of normalized texts and tokenizes them
 
         Parameters:
-            keep_sentences (bool): If true then will save tokenized abstracts as
-                                   a list of lists where each nested list is a single
-                                   sentence. If false a single list will be returned
-                                   containing all tokens
-            exclude_punct (bool): If true then standard punctuation will be left out
-                                  of token list. If false punctuation tokens will also
-                                  be returned
+            texts (list): List of texts to tokenize. If `default` then
+                          self.normalized_texts will be used
+            entities (dict): Dictionary of entity names and index positions. If
+                             `default` then self.entities_per_text will be used
+            use_entities (bool): If true then entity dict will be used to tokenize
+                                 multi-word phrases and chemical entities. Otherwise
+                                 all words in text list will be tokenized with the
+                                 same algorithm and some entities may be split
         """
-        assert len(self.normalized_texts) > 0, "ERROR: NO NORMALIZED TEXTS FOUND. YOU MUST RUN A LOAD OR NORMALIZATION FUNCTION PRIOR TO TOKENIZING"
-        if len(self.entities_per_text) == 0:
-            print("WARNING: NO ENTITIES ASSOCIATED WITH THESE TEXTS. ENTITIES MAY BE SPLIT ACCIDENTALLY DURING TOKENIZATION")
-        elif len(self.entities_per_text) != len(self.normalized_texts):
-            print("WARNING: LENGTH OF ENTITY DICT DOES NOT MATCH NUMBER OF TEXTS. SOME TEXTS WILL BE TOKENIZED WITH NO KNOWLEDGE OF CHEMICAL ENTITIES")
+        self.tokenized_texts = []
+        if texts != 'default':
+            self.normalized_texts = texts
+        if entities != 'default':
+            self.entities_per_text = entities
+        if use_entities:
+            assert len(self.normalized_texts) == len(self.entities_per_text), "ERROR: SIZE OF ENTITY AND TEXT LISTS DO NOT MATCH. YOU CAN EITHER RUN A NORMALIZATION FUNCTION ON UNPROCESSED TEXT OR LOAD FILES OF MATCHING SIZE"
+            ### Iterate through all abstracts and corresponding entities
+            for i, entities in self.entities_per_text.items():
+                i = int(i)
+                text = self.normalized_texts[i]
+                print('--TEXT {}---'.format(i+1))
+                print(text+'\n')
+                ### Replace all spaces in entity names with '_'
+                for entry in entities:
+                    name = entry[0]
+                    start = entry[1]
+                    stop = entry[2]
+                    new_name = name.replace(' ', '_')
+                    text = text[:start] + new_name + text[stop:]
+                print(text+'\n')
 
-        self.tokens_per_text = {}
-        for i, text in enumerate(self.normalized_texts):
-            cde_tokens = Paragraph(text).tokens
-            tokens = []
-            for sentence in cde_tokens:
-                if keep_sentences:
-                    tokens.append([])
-                    for token in sentence:
-                        token = token.text
-                        token = self.process_token(token,
-                                                   exclude_punct)
-                        tokens[-1] += token
-                else:
-                    for token in sentence:
-                        token = token.text
-                        token = self.process_token(token,
-                                                   exclude_punct)
-                        tokens += token
 
-            self.tokens_per_text[i] = tokens
-
-    def process_token(self, token, exclude_punct):
-        """
-        Takes a single token and applies rules-based preprocessing
-
-        Parameters:
-            token (str, required): Token string
-            exclude_punct (bool): See tokenize()
-
-        Returns
-            processed_token(s) (list): List of processed token(s)
-        """
-        ### Check to see if token should be split into two tokens
-        unit_match = self.UNIT_REGX.match(token)
-        if unit_match is not None and unit_match.group(2) in self.SPLIT_UNITS:
-            token1, token2 = unit_match.group(1), unit_match.group(2)
-            token1 = self.process_token(token1,
-                                        exclude_punct)[0]
-            token2 = self.process_token(token2,
-                                        exclude_punct)[0]
-            return [token1, token2]
-        else:
-            pass
-
-        if exclude_punct and token in self.PUNCT_REGX:
-            return []
-        else:
-            return [token]
+    #     """
+    #     Takes the set of normalized texts and tokenizes them.
+    #
+    #     Parameters:
+    #         keep_sentences (bool): If true then will save tokenized abstracts as
+    #                                a list of lists where each nested list is a single
+    #                                sentence. If false a single list will be returned
+    #                                containing all tokens
+    #         exclude_punct (bool): If true then standard punctuation will be left out
+    #                               of token list. If false punctuation tokens will also
+    #                               be returned
+    #     """
+    #     assert len(self.normalized_texts) > 0, "ERROR: NO NORMALIZED TEXTS FOUND. YOU MUST RUN A LOAD OR NORMALIZATION FUNCTION PRIOR TO TOKENIZING"
+    #     if len(self.entities_per_text) == 0:
+    #         print("WARNING: NO ENTITIES ASSOCIATED WITH THESE TEXTS. ENTITIES MAY BE SPLIT ACCIDENTALLY DURING TOKENIZATION")
+    #     elif len(self.entities_per_text) != len(self.normalized_texts):
+    #         print("WARNING: LENGTH OF ENTITY DICT DOES NOT MATCH NUMBER OF TEXTS. SOME TEXTS WILL BE TOKENIZED WITH NO KNOWLEDGE OF CHEMICAL ENTITIES")
+    #
+    #     self.tokens_per_text = {}
+    #     for i, text in enumerate(self.normalized_texts):
+    #         cde_tokens = Paragraph(text).tokens
+    #         tokens = []
+    #         for sentence in cde_tokens:
+    #             if keep_sentences:
+    #                 tokens.append([])
+    #                 for token in sentence:
+    #                     token = token.text
+    #                     token = self.process_token(token,
+    #                                                exclude_punct)
+    #                     tokens[-1] += token
+    #             else:
+    #                 for token in sentence:
+    #                     token = token.text
+    #                     token = self.process_token(token,
+    #                                                exclude_punct)
+    #                     tokens += token
+    #
+    #         self.tokens_per_text[i] = tokens
+    #
+    # def process_token(self, token, exclude_punct):
+    #     """
+    #     Takes a single token and applies rules-based preprocessing
+    #
+    #     Parameters:
+    #         token (str, required): Token string
+    #         exclude_punct (bool): See tokenize()
+    #
+    #     Returns
+    #         processed_token(s) (list): List of processed token(s)
+    #     """
+    #     ### Check to see if token should be split into two tokens
+    #     unit_match = self.UNIT_REGX.match(token)
+    #     if unit_match is not None and unit_match.group(2) in self.SPLIT_UNITS:
+    #         token1, token2 = unit_match.group(1), unit_match.group(2)
+    #         token1 = self.process_token(token1,
+    #                                     exclude_punct)[0]
+    #         token2 = self.process_token(token2,
+    #                                     exclude_punct)[0]
+    #         return [token1, token2]
+    #     else:
+    #         pass
+    #
+    #     if exclude_punct and token in self.PUNCT_REGX:
+    #         return []
+    #     else:
+    #         return [token]
 
 
     ########### LOADING FUNCTIONS ###############
@@ -253,11 +290,11 @@ class PreProcessor():
         for fn in fns:
             path = os.path.join(dir, fn)
             if fn == 'normalized_texts.npy':
-                load_normalized_texts(path)
+                self.load_normalized_texts(path)
             elif fn == 'search_history.json':
-                load_search_history(path)
+                self.load_search_history(path)
             elif fn == 'preprocess_history.json':
-                load_preprocess_history(path)
+                self.load_preprocess_history(path)
 
 
     ########## CLEANING FUNCTIONS ###############
@@ -363,10 +400,7 @@ class PreProcessor():
         Returns:
             clean_abstract (str): The clean abstract
         """
-
         split = abstract.split()
-
-
 
         if '©' in split:
             if split[0] != '©':
@@ -385,7 +419,6 @@ class PreProcessor():
                 else:
                     del split[0:2]
                     clean_abstract = ' '.join(split)
-
 
         else:
             clean_abstract = abstract
@@ -438,7 +471,8 @@ class PreProcessor():
         self.entity_counts['nitric oxide'] = 1
         self.entity_counts['nobelium'] = 1
         self.entity_counts['sugar'] = 1
-        for i, text in enumerate(texts):
+        for i in trange(len(texts)):
+            text = texts[i]
             ### Remove and normalize abbreviations
             if remove_abbreviations:
                 text = self.remove_abbreviations(text)
