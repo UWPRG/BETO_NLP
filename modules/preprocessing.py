@@ -130,188 +130,6 @@ class PreProcessor():
         self.entity_to_cid = {}
         self.cid_to_synonyms = {}
 
-    ########### TOKENIZING FUNCTIONS #############
-    """
-    Much of the tokenizing functionality has been adapted from the tokenization workflow
-    in "Unsupervised word embeddings capture latent knowledge from materials science
-    literature" (10.1038/s41586-019-1335-8)
-    """
-
-    def tokenize(self, texts='default', entities='default', use_entities=True,
-                 keep_sentences=True, exclude_punct=False, save=False):
-        """
-        Takes the set of normalized texts and tokenizes them
-
-        Parameters:
-            texts (list): List of texts to tokenize. If `default` then
-                          self.normalized_texts will be used
-            entities (dict): Dictionary of entity names and index positions. If
-                             `default` then self.entities_per_text will be used
-            use_entities (bool): If true then entity dict will be used to tokenize
-                                 multi-word phrases and chemical entities. Otherwise
-                                 all words in text list will be tokenized with the
-                                 same algorithm and some entities may be split
-            keep_sentences (bool): If true then abstract will be split into list of
-                                   lists where each nested list is a single sentence.
-                                   Otherwise abstract will be split into a single list
-                                   of tokens
-            exclude_punct (bool): If true then common punctuation marks will be left out
-                                  of token list. Otherwise all punctuation will remain
-        """
-        self.tokenized_texts = []
-        self.entity_idxs = {}
-        if texts == 'default':
-            texts = self.normalized_texts
-        if entities == 'default':
-            entities = self.entities_per_text
-        if use_entities:
-            assert len(texts) == len(entities), "ERROR: SIZE OF ENTITY AND TEXT LISTS DO NOT MATCH. YOU CAN EITHER RUN A NORMALIZATION FUNCTION ON UNPROCESSED TEXT OR LOAD FILES OF MATCHING SIZE"
-
-        ### Instantiate Mat2Vec MaterialsTextProcessor
-        MTP = MaterialsTextProcessor()
-
-        ### Iterate through all abstracts and corresponding entities if applicable
-        for i in range(len(texts)):
-            text = texts[i]
-            entity_spans = []
-            print('---Text {}---'.format(i+1))
-            # print(text)
-            if use_entities:
-                entry = entities[str(i)]
-                for entity in entry:
-                    name = entity[0]
-                    start = entity[1]
-                    stop = entity[2]
-                    entity_spans.append((start, stop))
-                    new_name = name.replace(' ', '_')
-                    text = text[:start] + new_name + text[stop:]
-            # print(text+'\n')
-
-            if keep_sentences == False:
-                ### Split text into entities vs. non-entities
-                token_list = self.extract_entity_tokens(text, entity_spans)
-
-                ### Tokenize non-entities and combine with entities
-                tokens, self.entity_idxs[i] = self.process_token_list(token_list)
-
-                ### Use Mat2Vec MaterialsTextProcessor for casing, number normalization, puncutation, etc.
-                tokens, _ = MTP.process(tokens,
-                                        exclude_punct=exclude_punct,
-                                        normalize_materials=False,
-                                        split_oxidation=False)
-            else:
-                ### Split text into sentences
-                tokens = []
-                self.entity_idxs[i] = []
-                para = Paragraph(text)
-                prior_split = 0
-                for j, sentence in enumerate(para.sentences):
-                    split = sentence.end
-                    sentence = sentence.text
-                    sentence_entities = []
-                    for span in entity_spans:
-                        if span[1] < split and span[0] >= prior_split:
-                            new_span = (span[0] - split, span[1] - split)
-                            sentence_entities.append(new_span)
-                    prior_split = split
-
-                    ### Make a token_list for each sentence
-                    token_list = self.extract_entity_tokens(sentence, sentence_entities)
-
-                    ### Tokenize non-entities and combine with entities
-                    sentence_tokens, sentence_entity_idxs = self.process_token_list(token_list)
-                    self.entity_idxs[i].append(sentence_entity_idxs)
-
-                    ### Mat2Vec Processing
-                    sentence_tokens, _ = MTP.process(sentence_tokens,
-                                                     exclude_punct=exclude_punct,
-                                                     normalize_materials=False,
-                                                     split_oxidation=False)
-                    tokens.append(sentence_tokens)
-            self.tokenized_texts.append(tokens)
-
-        if save:
-            os.makedirs('preprocessor_files', exist_ok=True)
-            print(self.tokenized_texts)
-
-    def extract_entity_tokens(self, text, entity_spans):
-        """
-        Takes a string of text and a list of entity idxs and extracts entities
-        locations so remaining text can be automatically tokenized by ChemWordTokenizer
-
-        Parameters:
-            text (str, required): A string of text containing known entities that
-                                  are not identifiable through pre-existing packages
-            entity_spans (list, required): A list of start and stop idxs for each entity
-                                           indicating where they appear in the text
-        Returns:
-            token_list (list): A list containing portions of unparsed text as well as
-                              entities (differentiated by their placement in nested
-                              lists)
-        """
-        token_list = []
-        prev_start = 0
-        if len(entity_spans) > 0:
-            for j, span in enumerate(entity_spans):
-                start = span[0]
-                stop = span[1]
-                text_add = text[prev_start:start]
-                if text_add != '':
-                    token_list.append(text_add)
-                token_list.append([text[start:stop]])
-                if j == len(entity_spans) - 1:
-                    token_list.append(text[stop:])
-                prev_start = stop
-        else:
-            token_list = [text]
-        return token_list
-
-    def process_token_list(self, token_list):
-        """
-        Takes the token_list returned from extract_entity_tokens(), processes
-        the non-entity portions and combines all tokens into a single list. It
-        also stores the entity names and list idxs in a dictionary
-
-        Parameters:
-            token_list (list, required): list of texts to be tokenized and already
-                                         tokenized entities
-        Returns:
-            tokens (list): ordered list of tokens for the whole text
-            entity_idxs (list): list of items and their token idx for each list
-        """
-        tokens = []
-        entity_idxs = []
-        CWT = ChemWordTokenizer()
-        for j, item in enumerate(token_list):
-            if isinstance(item, str):
-                item_tokens = CWT.tokenize(item)
-                ### Split numbers from common units
-                split_tokens = []
-                for token in item_tokens:
-                    split_tokens += self.split_token(token)
-                tokens += split_tokens
-            else:
-                tokens += item
-                item_idx = len(tokens) - 1
-                entity_idxs.append([item[0], item_idx])
-        return tokens, entity_idxs
-
-    def split_token(self, token):
-            """
-            Processes a single token, in case it needs to be split up (this function
-            is adapted from https://github.com/materialsintelligence/mat2vec)
-
-            Parameters:
-                token (str, required): The token to be processed.
-            Returns:
-                token: The processed token.
-            """
-            nr_unit = self.UNIT_REGX.match(token)
-            if nr_unit is not None and nr_unit.group(2) in self.SPLIT_UNITS:
-                # Splitting the unit from number, e.g. "5V" -> ["5", "V"].
-                return [nr_unit.group(1), nr_unit.group(2)]
-            else:
-                return [token]
 
     ########### LOADING FUNCTIONS ###############
 
@@ -350,6 +168,27 @@ class PreProcessor():
         """
         self.normalized_texts = np.load(path, allow_pickle=True)
 
+    def load_tokenized_texts(self, path):
+        """
+        Loads a dictionary of tokenized texts
+
+        Parameters:
+            path (str, required): Path to json file containing tokenized texts
+        """
+        with open(path) as f:
+            self.tokenized_texts = json.load(f)
+
+    def load_tokenized_entity_idxs(self, path):
+        """
+        Loads a dictionary containing the index locations of entity tokens in each
+        text
+
+        Parameters:
+            path (str, required): Path to json file containing entity idxs
+        """
+        with open(path) as f:
+            self.entity_idxs = json.load(f)
+
     def load_preprocessor(self, dir):
         """
         Loads all manually created preprocessor save files. Files must have the
@@ -367,6 +206,10 @@ class PreProcessor():
                 self.load_search_history(path)
             elif fn == 'preprocess_history.json':
                 self.load_preprocess_history(path)
+            elif fn == 'tokenized_texts.json':
+                self.load_tokenized_texts(path)
+            elif fn == 'tokenized_entity_idxs.json':
+                self.load_tokenized_entity_idxs(path)
 
 
     ########## CLEANING FUNCTIONS ###############
@@ -698,3 +541,195 @@ class PreProcessor():
                 else:
                     pass
         return abstract
+
+
+    ########### TOKENIZING FUNCTIONS #############
+    """
+    Much of the tokenizing functionality has been adapted from the tokenization workflow
+    in "Unsupervised word embeddings capture latent knowledge from materials science
+    literature" (10.1038/s41586-019-1335-8)
+    """
+
+    def tokenize(self, texts='default', entities='default', use_entities=True,
+                 keep_sentences=True, exclude_punct=False, save=False):
+        """
+        Takes the set of normalized texts and tokenizes them
+
+        Parameters:
+            texts (list): List of texts to tokenize. If `default` then
+                          self.normalized_texts will be used
+            entities (dict): Dictionary of entity names and index positions. If
+                             `default` then self.entities_per_text will be used
+            use_entities (bool): If true then entity dict will be used to tokenize
+                                 multi-word phrases and chemical entities. Otherwise
+                                 all words in text list will be tokenized with the
+                                 same algorithm and some entities may be split
+            keep_sentences (bool): If true then abstract will be split into list of
+                                   lists where each nested list is a single sentence.
+                                   Otherwise abstract will be split into a single list
+                                   of tokens
+            exclude_punct (bool): If true then common punctuation marks will be left out
+                                  of token list. Otherwise all punctuation will remain
+        """
+        self.tokenized_texts = {}
+        self.entity_idxs = {}
+        if texts == 'default':
+            texts = self.normalized_texts
+        if entities == 'default':
+            entities = self.entities_per_text
+        if use_entities:
+            assert len(texts) == len(entities), "ERROR: SIZE OF ENTITY AND TEXT LISTS DO NOT MATCH. YOU CAN EITHER RUN A NORMALIZATION FUNCTION ON UNPROCESSED TEXT OR LOAD FILES OF MATCHING SIZE"
+
+        ### Instantiate Mat2Vec MaterialsTextProcessor
+        MTP = MaterialsTextProcessor()
+
+        ### Iterate through all abstracts and corresponding entities if applicable
+        for i in range(len(texts)):
+            text = texts[i]
+            entity_spans = []
+            if use_entities:
+                entry = entities[str(i)]
+                for entity in entry:
+                    name = entity[0]
+                    start = entity[1]
+                    stop = entity[2]
+                    entity_spans.append((start, stop))
+                    new_name = name.replace(' ', '_')
+                    text = text[:start] + new_name + text[stop:]
+
+            if keep_sentences == False:
+                ### Split text into entities vs. non-entities
+                token_list = self.extract_entity_tokens(text, entity_spans)
+
+                ### Tokenize non-entities and combine with entities
+                tokens, self.entity_idxs[i] = self.process_token_list(token_list)
+
+                ### Use Mat2Vec MaterialsTextProcessor for casing, number normalization, puncutation, etc.
+                tokens, _ = MTP.process(tokens,
+                                        exclude_punct=exclude_punct,
+                                        normalize_materials=False,
+                                        split_oxidation=False)
+            else:
+                ### Split text into sentences
+                tokens = []
+                self.entity_idxs[i] = []
+                para = Paragraph(text)
+                prior_split = 0
+                for j, sentence in enumerate(para.sentences):
+                    split = sentence.end
+                    sentence = sentence.text
+                    sentence_entities = []
+                    for span in entity_spans:
+                        if span[1] < split and span[0] >= prior_split:
+                            new_span = (span[0] - split, span[1] - split)
+                            sentence_entities.append(new_span)
+                    prior_split = split
+
+                    ### Make a token_list for each sentence
+                    token_list = self.extract_entity_tokens(sentence, sentence_entities)
+
+                    ### Tokenize non-entities and combine with entities
+                    sentence_tokens, sentence_entity_idxs = self.process_token_list(token_list)
+                    self.entity_idxs[i].append(sentence_entity_idxs)
+
+                    ### Mat2Vec Processing
+                    sentence_tokens, _ = MTP.process(sentence_tokens,
+                                                     exclude_punct=exclude_punct,
+                                                     normalize_materials=False,
+                                                     split_oxidation=False)
+                    tokens.append(sentence_tokens)
+            self.tokenized_texts[i] = tokens
+
+        if save:
+            os.makedirs('preprocessor_files', exist_ok=True)
+
+            with io.open('preprocessor_files/tokenized_texts.json', 'w', encoding='utf8') as f:
+                out_ = json.dumps(self.tokenized_texts,
+                                  indent=4, sort_keys=False,
+                                  separators=(',', ': '), ensure_ascii=False)
+                f.write(str(out_))
+
+            with io.open('preprocessor_files/tokenized_entity_idxs.json', 'w', encoding='utf8') as f:
+                out_ = json.dumps(self.entity_idxs,
+                                  indent=4, sort_keys=False,
+                                  separators=(',', ': '), ensure_ascii=False)
+                f.write(str(out_))
+
+    def extract_entity_tokens(self, text, entity_spans):
+        """
+        Takes a string of text and a list of entity idxs and extracts entities
+        locations so remaining text can be automatically tokenized by ChemWordTokenizer
+
+        Parameters:
+            text (str, required): A string of text containing known entities that
+                                  are not identifiable through pre-existing packages
+            entity_spans (list, required): A list of start and stop idxs for each entity
+                                           indicating where they appear in the text
+        Returns:
+            token_list (list): A list containing portions of unparsed text as well as
+                              entities (differentiated by their placement in nested
+                              lists)
+        """
+        token_list = []
+        prev_start = 0
+        if len(entity_spans) > 0:
+            for j, span in enumerate(entity_spans):
+                start = span[0]
+                stop = span[1]
+                text_add = text[prev_start:start]
+                if text_add != '':
+                    token_list.append(text_add)
+                token_list.append([text[start:stop]])
+                if j == len(entity_spans) - 1:
+                    token_list.append(text[stop:])
+                prev_start = stop
+        else:
+            token_list = [text]
+        return token_list
+
+    def process_token_list(self, token_list):
+        """
+        Takes the token_list returned from extract_entity_tokens(), processes
+        the non-entity portions and combines all tokens into a single list. It
+        also stores the entity names and list idxs in a dictionary
+
+        Parameters:
+            token_list (list, required): list of texts to be tokenized and already
+                                         tokenized entities
+        Returns:
+            tokens (list): ordered list of tokens for the whole text
+            entity_idxs (list): list of items and their token idx for each list
+        """
+        tokens = []
+        entity_idxs = []
+        CWT = ChemWordTokenizer()
+        for j, item in enumerate(token_list):
+            if isinstance(item, str):
+                item_tokens = CWT.tokenize(item)
+                ### Split numbers from common units
+                split_tokens = []
+                for token in item_tokens:
+                    split_tokens += self.split_token(token)
+                tokens += split_tokens
+            else:
+                tokens += item
+                item_idx = len(tokens) - 1
+                entity_idxs.append([item[0], item_idx])
+        return tokens, entity_idxs
+
+    def split_token(self, token):
+        """
+        Processes a single token, in case it needs to be split up (this function
+        is adapted from https://github.com/materialsintelligence/mat2vec)
+
+        Parameters:
+            token (str, required): The token to be processed.
+        Returns:
+            token: The processed token.
+        """
+        nr_unit = self.UNIT_REGX.match(token)
+        if nr_unit is not None and nr_unit.group(2) in self.SPLIT_UNITS:
+            # Splitting the unit from number, e.g. "5V" -> ["5", "V"].
+            return [nr_unit.group(1), nr_unit.group(2)]
+        else:
+            return [token]
