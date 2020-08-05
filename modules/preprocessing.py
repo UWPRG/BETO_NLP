@@ -18,7 +18,7 @@ from chemdataextractor.nlp.tokenize import ChemWordTokenizer
 from mat2vec.processing.process import MaterialsTextProcessor
 
 
-class PreProcessor():
+class SciTextProcessor():
     """
     Class that allows a variety of preprocessing functions to be applied to a set
     of scientific texts - either abstracts or full texts. Consists of functions for
