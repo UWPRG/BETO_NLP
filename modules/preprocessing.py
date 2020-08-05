@@ -466,7 +466,7 @@ class PreProcessor():
             self.normalized_texts.append(text)
 
             ### Save every n abstracts
-            if i % save_freq == 0:
+            if (i+1) % save_freq == 0 or i == len(texts) - 1:
                 if save:
                     os.makedirs('preprocessor_files', exist_ok=True)
                     np.save('preprocessor_files/normalized_texts.npy', np.array(self.normalized_texts)) # all texts
