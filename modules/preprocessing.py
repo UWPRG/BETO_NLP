@@ -380,10 +380,10 @@ class PreProcessor():
         self.entity_to_cid['sugar'] = [None, None]
         self.entity_to_cid['chloro'] = [None, None]
         self.entity_to_cid['alcohol'] = [None, None]
-        self.cid_to_synonyms[281] = ['CO']
-        self.cid_to_synonyms[104730] = ['Co']
-        self.cid_to_synonyms[145068] = ['NO']
-        self.cid_to_synonyms[24822] = ['No']
+        self.cid_to_synonyms['281'] = ['CO']
+        self.cid_to_synonyms['104730'] = ['Co']
+        self.cid_to_synonyms['145068'] = ['NO']
+        self.cid_to_synonyms['24822'] = ['No']
         self.entity_counts['carbon monoxide'] = 1
         self.entity_counts['cobalt'] = 1
         self.entity_counts['nitric oxide'] = 1
@@ -435,9 +435,9 @@ class PreProcessor():
                         iupac_name = c.iupac_name
                         self.entity_to_cid[name] = [cid, iupac_name]
                         if cid not in self.cid_to_synonyms.keys():
-                            self.cid_to_synonyms[cid] = [name]
+                            self.cid_to_synonyms[str(cid)] = [name]
                         else:
-                            self.cid_to_synonyms[cid].append(name)
+                            self.cid_to_synonyms[str(cid)].append(name)
                         self.entity_counts[self.entity_to_cid[name][1]] = 1
                 else:
                     if self.entity_to_cid[name][0] is None:
@@ -448,7 +448,7 @@ class PreProcessor():
             ### Sort named entities by location in text and replace with synonym
             entity_list.sort(key=lambda x:x[1])
             index_change = 0
-            self.entities_per_text[i] = []
+            self.entities_per_text[str(i)] = []
             for entity in entity_list:
                 name, start, stop = entity
                 if self.entity_to_cid[name][1] is not None:
@@ -462,7 +462,7 @@ class PreProcessor():
                     replacement_delta = len(replacement_name) - (stop - start)
                     text = text[:start+index_change] + replacement_name + text[stop+index_change:]
                 index_change += replacement_delta
-                self.entities_per_text[i].append((replacement_name, start+index_change-replacement_delta, stop+index_change, name))
+                self.entities_per_text[str(i)].append((replacement_name, start+index_change-replacement_delta, stop+index_change, name))
             if verbose:
                 print(text)
                 print('\n')
