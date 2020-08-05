@@ -378,6 +378,8 @@ class PreProcessor():
         self.entity_to_cid['NO'] = [145068, 'nitric oxide']
         self.entity_to_cid['No'] = [24822, 'nobelium']
         self.entity_to_cid['sugar'] = [None, None]
+        self.entity_to_cid['chloro'] = [None, None]
+        self.entity_to_cid['alcohol'] = [None, None]
         self.cid_to_synonyms[281] = ['CO']
         self.cid_to_synonyms[104730] = ['Co']
         self.cid_to_synonyms[145068] = ['NO']
@@ -387,6 +389,8 @@ class PreProcessor():
         self.entity_counts['nitric oxide'] = 1
         self.entity_counts['nobelium'] = 1
         self.entity_counts['sugar'] = 1
+        self.entity_counts['chloro'] = 1
+        self.entity_counts['alcohol'] = 1
         for i in trange(len(texts)):
             text = texts[i]
             ### Remove and normalize abbreviations
