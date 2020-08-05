@@ -129,87 +129,8 @@ class SciTextProcessor():
         self.entities_per_text = {}
         self.entity_to_cid = {}
         self.cid_to_synonyms = {}
-
-
-    ########### LOADING FUNCTIONS ###############
-
-    def load_search_history(self, path):
-        """
-        Loads a series of PubChem searches so those terms will not be searched
-        again in subsequent runs
-
-        Parameters:
-            path (str, required): Path to json file containing search history
-                                  dictionaries
-        """
-        with open(path) as f:
-            search_history = json.load(f)
-        self.entity_to_cid = search_history['entity_to_cid']
-        self.cid_to_synonyms = search_history['cid_to_synonyms']
-
-    def load_preprocess_history(self, path):
-        """
-        Loads dictionaries of entity names and counts
-
-        Parameters:
-            path (str, required): Path to json file containing preprocessing history
-        """
-        with open(path) as f:
-            preprocess_history = json.load(f)
-        self.entities_per_text = preprocess_history['entities_per_text']
-        self.entity_counts = preprocess_history['entity_counts']
-
-    def load_normalized_texts(self, path):
-        """
-        Loads a list of normalized texts
-
-        Parameters:
-            path (str, required): Path to numpy file containing normalized texts
-        """
-        self.normalized_texts = np.load(path, allow_pickle=True)
-
-    def load_tokenized_texts(self, path):
-        """
-        Loads a dictionary of tokenized texts
-
-        Parameters:
-            path (str, required): Path to json file containing tokenized texts
-        """
-        with open(path) as f:
-            self.tokenized_texts = json.load(f)
-
-    def load_tokenized_entity_idxs(self, path):
-        """
-        Loads a dictionary containing the index locations of entity tokens in each
-        text
-
-        Parameters:
-            path (str, required): Path to json file containing entity idxs
-        """
-        with open(path) as f:
-            self.entity_idxs = json.load(f)
-
-    def load_preprocessor(self, dir):
-        """
-        Loads all manually created preprocessor save files. Files must have the
-        same name as when written by the PreProcessor object
-
-        Parameters:
-            dir (str, required): Path to folder containing save files
-        """
-        fns = os.listdir(dir)
-        for fn in fns:
-            path = os.path.join(dir, fn)
-            if fn == 'normalized_texts.npy':
-                self.load_normalized_texts(path)
-            elif fn == 'search_history.json':
-                self.load_search_history(path)
-            elif fn == 'preprocess_history.json':
-                self.load_preprocess_history(path)
-            elif fn == 'tokenized_texts.json':
-                self.load_tokenized_texts(path)
-            elif fn == 'tokenized_entity_idxs.json':
-                self.load_tokenized_entity_idxs(path)
+        self.tokenized_texts = {}
+        self.entity_idxs = {}
 
 
     ########## CLEANING FUNCTIONS ###############
@@ -435,9 +356,9 @@ class SciTextProcessor():
                         iupac_name = c.iupac_name
                         self.entity_to_cid[name] = [cid, iupac_name]
                         if cid not in self.cid_to_synonyms.keys():
-                            self.cid_to_synonyms[str(cid)] = [name]
+                            self.cid_to_synonyms[cid] = [name]
                         else:
-                            self.cid_to_synonyms[str(cid)].append(name)
+                            self.cid_to_synonyms[cid].append(name)
                         self.entity_counts[self.entity_to_cid[name][1]] = 1
                 else:
                     if self.entity_to_cid[name][0] is None:
@@ -448,7 +369,7 @@ class SciTextProcessor():
             ### Sort named entities by location in text and replace with synonym
             entity_list.sort(key=lambda x:x[1])
             index_change = 0
-            self.entities_per_text[str(i)] = []
+            self.entities_per_text[i] = []
             for entity in entity_list:
                 name, start, stop = entity
                 if self.entity_to_cid[name][1] is not None:
@@ -462,7 +383,7 @@ class SciTextProcessor():
                     replacement_delta = len(replacement_name) - (stop - start)
                     text = text[:start+index_change] + replacement_name + text[stop+index_change:]
                 index_change += replacement_delta
-                self.entities_per_text[str(i)].append((replacement_name, start+index_change-replacement_delta, stop+index_change, name))
+                self.entities_per_text[i].append((replacement_name, start+index_change-replacement_delta, stop+index_change, name))
             if verbose:
                 print(text)
                 print('\n')
@@ -575,8 +496,6 @@ class SciTextProcessor():
             exclude_punct (bool): If true then common punctuation marks will be left out
                                   of token list. Otherwise all punctuation will remain
         """
-        self.tokenized_texts = {}
-        self.entity_idxs = {}
         if texts == 'default':
             texts = self.normalized_texts
         if entities == 'default':
@@ -592,7 +511,7 @@ class SciTextProcessor():
             text = texts[i]
             entity_spans = []
             if use_entities:
-                entry = entities[str(i)]
+                entry = entities[i]
                 for entity in entry:
                     name = entity[0]
                     start = entity[1]
@@ -737,3 +656,110 @@ class SciTextProcessor():
             return [nr_unit.group(1), nr_unit.group(2)]
         else:
             return [token]
+
+
+    ########### LOADING FUNCTIONS ###############
+
+    def load_search_history(self, path):
+        """
+        Loads a series of PubChem searches so those terms will not be searched
+        again in subsequent runs
+
+        Parameters:
+            path (str, required): Path to json file containing search history
+                                  dictionaries
+        """
+        with open(path) as f:
+            search_history = json.load(f)
+        self.entity_to_cid = search_history['entity_to_cid']
+        cid_to_synonyms = search_history['cid_to_synonyms']
+        for k, v in cid_to_synonyms.items():
+            self.cid_to_synonyms[int(k)] = v
+
+    def load_preprocess_history(self, path):
+        """
+        Loads dictionaries of entity names and counts
+
+        Parameters:
+            path (str, required): Path to json file containing preprocessing history
+        """
+        with open(path) as f:
+            preprocess_history = json.load(f)
+        entities_per_text = preprocess_history['entities_per_text']
+        self.entity_counts = preprocess_history['entity_counts']
+        for k, v in entities_per_text.items():
+            self.entities_per_text[int(k)] = v
+
+    def load_normalized_texts(self, path):
+        """
+        Loads a list of normalized texts
+
+        Parameters:
+            path (str, required): Path to numpy file containing normalized texts
+        """
+        self.normalized_texts = np.load(path, allow_pickle=True)
+
+    def load_tokenized_texts(self, path):
+        """
+        Loads a dictionary of tokenized texts
+
+        Parameters:
+            path (str, required): Path to json file containing tokenized texts
+        """
+        with open(path) as f:
+            tokenized_texts = json.load(f)
+        for k, v in tokenized_texts.items():
+            self.tokenized_texts[int(k)] = v
+
+    def load_tokenized_entity_idxs(self, path):
+        """
+        Loads a dictionary containing the index locations of entity tokens in each
+        text
+
+        Parameters:
+            path (str, required): Path to json file containing entity idxs
+        """
+        with open(path) as f:
+            entity_idxs = json.load(f)
+            for k, v in entity_idxs.items():
+                self.entity_idxs[int(k)] = v
+
+    def load_normalizer(self, dir):
+        """
+        Loads all manually created preprocessor save files prior to tokenization.
+        Files must have the same name as when written by the SciTextProcessor object
+
+        Parameters:
+            dir (str, required): Path to folder containing save files
+        """
+        fns = os.listdir(dir)
+        for fn in fns:
+            path = os.path.join(dir, fn)
+            if fn == 'normalized_texts.npy':
+                self.load_normalized_texts(path)
+            elif fn == 'search_history.json':
+                self.load_search_history(path)
+            elif fn == 'preprocess_history.json':
+                self.load_preprocess_history(path)
+
+    def load_preprocessor(self, dir):
+        """
+        Loads all manually created preprocessor save files. Files must have the
+        same name as when written by the SciTextProcessor object
+
+        Parameters:
+            dir (str, required): Path to folder containing save files
+        """
+        fns = os.listdir(dir)
+        for fn in fns:
+            path = os.path.join(dir, fn)
+            if fn == 'normalized_texts.npy':
+                self.load_normalized_texts(path)
+            elif fn == 'search_history.json':
+                self.load_search_history(path)
+            elif fn == 'preprocess_history.json':
+                self.load_preprocess_history(path)
+            elif fn == 'tokenized_texts.json':
+                self.load_tokenized_texts(path)
+            elif fn == 'tokenized_entity_idxs.json':
+                self.load_tokenized_entity_idxs(path)
