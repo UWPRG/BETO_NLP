@@ -133,7 +133,7 @@ class SciTextProcessor():
         self.entity_counts = {}
         self.entities_per_text = {}
         self.entity_to_cid = {}
-        self.cid_to_synonyms = {}
+        self.entity_to_synonyms = {}
         self.tokenized_texts = {}
         self.entity_idxs = {}
 
@@ -318,10 +318,10 @@ class SciTextProcessor():
         self.entity_to_cid['sugar'] = [None, None]
         self.entity_to_cid['chloro'] = [None, None]
         self.entity_to_cid['alcohol'] = [None, None]
-        self.cid_to_synonyms['281'] = ['CO']
-        self.cid_to_synonyms['104730'] = ['Co']
-        self.cid_to_synonyms['145068'] = ['NO']
-        self.cid_to_synonyms['24822'] = ['No']
+        self.entity_to_synonyms['carbon monoxide'] = ['CO']
+        self.entity_to_synonyms['cobalt'] = ['Co']
+        self.entity_to_synonyms['nitric oxide'] = ['NO']
+        self.entity_to_synonyms['nobelium'] = ['No']
         for k, v in self.entity_to_cid.items():
             if v[1] is None:
                 self.entity_counts[k] = 1
@@ -372,10 +372,10 @@ class SciTextProcessor():
                         cid = c.cid
                         iupac_name = c.iupac_name
                         self.entity_to_cid[name] = [cid, iupac_name]
-                        if cid not in self.cid_to_synonyms.keys():
-                            self.cid_to_synonyms[cid] = [name]
+                        if iupac_name not in self.entity_to_synonyms.keys():
+                            self.entity_to_synonyms[iupac_name] = [name]
                         else:
-                            self.cid_to_synonyms[cid].append(name)
+                            self.entity_to_synonyms[iupac_name].append(name)
                         self.entity_counts[self.entity_to_cid[name][1]] = 1
                 else:
                     if self.entity_to_cid[name][1] is None:
@@ -413,10 +413,10 @@ class SciTextProcessor():
                     os.makedirs('preprocessor_files', exist_ok=True)
                     np.save('preprocessor_files/normalized_texts.npy', np.array(self.normalized_texts)) # all texts
 
-                    for cid, synonyms in self.cid_to_synonyms.items():
-                        self.cid_to_synonyms[cid] = list(set(synonyms))
+                    for iupac_name, synonyms in self.entity_to_synonyms.items():
+                        self.entity_to_synonyms[iupac_name] = list(set(synonyms))
                     search_history = {'entity_to_cid': self.entity_to_cid,
-                                      'cid_to_synonyms': self.cid_to_synonyms}
+                                      'entity_to_synonyms': self.entity_to_synonyms}
 
                     preprocess_history = {'entities_per_text': self.entities_per_text,
                                           'entity_counts': self.entity_counts}
@@ -737,9 +737,7 @@ class SciTextProcessor():
         with open(path) as f:
             search_history = json.load(f)
         self.entity_to_cid = search_history['entity_to_cid']
-        cid_to_synonyms = search_history['cid_to_synonyms']
-        for k, v in cid_to_synonyms.items():
-            self.cid_to_synonyms[int(k)] = v
+        self.entity_to_synonyms = search_history['entity_to_synonyms']
 
     def load_preprocess_history(self, path):
         """
