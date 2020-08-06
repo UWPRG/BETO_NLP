@@ -763,7 +763,7 @@ class SciTextProcessor():
         Parameters:
             path (str, required): Path to numpy file containing normalized texts
         """
-        self.normalized_texts = np.load(path, allow_pickle=True)
+        self.normalized_texts = list(np.load(path, allow_pickle=True))
 
     def load_tokenized_texts(self, path):
         """
