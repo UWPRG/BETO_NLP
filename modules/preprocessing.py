@@ -3,7 +3,9 @@ import os
 import sys
 import re
 import json
+import time
 import regex
+import signal
 import string
 import pickle
 import numpy as np
@@ -35,7 +37,10 @@ class SciTextProcessor():
         """
         self.type = type
         self.min_len = 5
-        self.texts = texts
+        if isinstance(texts, str):
+            self.texts = [texts]
+        else:
+            self.texts = texts
 
         ### Element text and regex
         self.ELEMENTS = ["H", "He", "Li", "Be", "B", "C", "N", "O", "F", "Ne", "Na", "Mg", "Al", "Si", "P", "S", "Cl", "Ar", "K",
@@ -106,7 +111,7 @@ class SciTextProcessor():
             self.dropped_idxs = []
             warned = False
             too_short = False
-            for i, abstract in enumerate(texts):
+            for i, abstract in enumerate(self.texts):
                 if abstract is None:
                     sys.stdout.write("\r\033[K"+"WARNING: TEXT LIST CONTAINS EMPTY ABSTRACTS. NOT ALL SAMPLES CAN BE CLEANED.")
                     warned = True
@@ -291,6 +296,16 @@ class SciTextProcessor():
                          twice without moving saved files will overwrite your previous
                          saves
         """
+        ### Custom exception for catching server-side pubchem errors
+        class TimeoutException(Exception):
+            pass
+
+        def timeout_handler(signum, frame):
+            raise TimeoutException
+
+        signal.signal(signal.SIGALRM, timeout_handler)
+        self.timedout_entities = []
+
         if texts == 'default':
             texts = self.clean_texts
 
@@ -347,7 +362,7 @@ class SciTextProcessor():
 
                 ### Search entity in PubChem if not already done
                 if name not in self.entity_to_cid.keys():
-                    c = self.search_pubchem(name, 0, search_attempts)
+                    c = self.search_pubchem(name, search_attempts, TimeoutException)
                     if len(c) == 0:
                         self.entity_to_cid[name] = [None, None]
                         self.entity_counts[name] = 1
@@ -416,21 +431,34 @@ class SciTextProcessor():
                                           separators=(',', ': '), ensure_ascii=False)
                         f.write(str(out_))
 
-    def search_pubchem(self, name, attempts, cutoff):
-        if attempts < cutoff - 1:
+    def search_pubchem(self, name, attempts, TimeoutException):
+        """
+        This function searches pubchem api for named entity and catches exceptions
+        if the search is taking too long
+
+        Parameters:
+            name (str, required): name of entity to search in pubchem
+            attempts (int, required): number of search attempts to try before exiting
+                                      the function (only relevant when search takes
+                                      longer than 10 seconds)
+            TimeoutException (exception, required): custom exception for catching
+                                                    timeout errors
+        Returns:
+            c (list): list of pubchem compound objects
+        """
+        for i in range(attempts):
             try:
+                signal.alarm(10)
                 c = pcp.get_compounds(name, 'name')
                 return c
-            except TimeoutError:
-                self.search_pubchem(name, attempts+1, cutoff)
-        else:
-            try:
-                c = pcp.get_compounds(name, 'name')
-                return c
-            except TimeoutError:
-                c = []
-                print("WARNING: ENTITY '{}' TIMED OUT {} TIMES".format(name, cutoff))
-                return c
+            except TimeoutException:
+                continue
+            else:
+                signal.alarm(0)
+        c = []
+        print("WARNING: ENTITY '{}' TIMED OUT {} TIMES".format(name, attempts))
+        self.timedout_entities.append(name)
+        return c
 
     def remove_abbreviations(self, abstract):
         doc = Document(abstract)
