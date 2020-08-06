@@ -327,8 +327,9 @@ class SciTextProcessor():
                 self.entity_counts[k] = 1
             else:
                 self.entity_counts[v[1]] = 1
-        for i in trange(len(self.normalized_texts), len(texts)+len(self.normalized_texts)):
-            text_idx = i - len(self.normalized_texts)
+        start_idx = len(self.normalized_texts)
+        for i in trange(start_idx, len(texts)+start_idx):
+            text_idx = i - start_idx
             text = texts[text_idx]
             ### Remove and normalize abbreviations
             if remove_abbreviations:
@@ -572,7 +573,7 @@ class SciTextProcessor():
         MTP = MaterialsTextProcessor()
 
         ### Iterate through all abstracts and corresponding entities if applicable
-        for i in range(len(texts)):
+        for i in trange(len(texts)):
             text = texts[i]
             entity_spans = []
             if use_entities:
