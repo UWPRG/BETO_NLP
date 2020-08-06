@@ -328,7 +328,6 @@ class SciTextProcessor():
             else:
                 self.entity_counts[v[1]] = 1
         for i in trange(len(self.normalized_texts), len(texts)+len(self.normalized_texts)):
-            print(i)
             text_idx = i - len(self.normalized_texts)
             text = texts[text_idx]
             ### Remove and normalize abbreviations
