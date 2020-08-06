@@ -322,15 +322,15 @@ class SciTextProcessor():
         self.cid_to_synonyms['104730'] = ['Co']
         self.cid_to_synonyms['145068'] = ['NO']
         self.cid_to_synonyms['24822'] = ['No']
-        self.entity_counts['carbon monoxide'] = 1
-        self.entity_counts['cobalt'] = 1
-        self.entity_counts['nitric oxide'] = 1
-        self.entity_counts['nobelium'] = 1
-        self.entity_counts['sugar'] = 1
-        self.entity_counts['chloro'] = 1
-        self.entity_counts['alcohol'] = 1
-        for i in trange(len(texts)):
-            text = texts[i]
+        for k, v in self.entity_to_cid.items():
+            if v[1] is None:
+                self.entity_counts[k] = 1
+            else:
+                self.entity_counts[v[1]] = 1
+        for i in trange(len(self.normalized_texts), len(texts)+len(self.normalized_texts)):
+            print(i)
+            text_idx = i - len(self.normalized_texts)
+            text = texts[text_idx]
             ### Remove and normalize abbreviations
             if remove_abbreviations:
                 text = self.remove_abbreviations(text)
@@ -339,7 +339,7 @@ class SciTextProcessor():
 
             doc = Document(text)
             if verbose:
-                print('---Text {}---'.format(i+1))
+                print('---Text {}---'.format(text_idx+1))
                 print(text+'\n')
             cems = doc.cems
             entity_list = []
@@ -379,7 +379,7 @@ class SciTextProcessor():
                             self.cid_to_synonyms[cid].append(name)
                         self.entity_counts[self.entity_to_cid[name][1]] = 1
                 else:
-                    if self.entity_to_cid[name][0] is None:
+                    if self.entity_to_cid[name][1] is None:
                         self.entity_counts[name] += 1
                     else:
                         self.entity_counts[self.entity_to_cid[name][1]] += 1
