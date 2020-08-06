@@ -273,7 +273,8 @@ class SciTextProcessor():
     ############ NORMALIZATION FUNCTIONS ##############
 
     def normalize_chemical_entities(self, texts='default', remove_abbreviations=True,
-                                    verbose=False, write_bold=False, save=False, save_freq=100):
+                                    verbose=False, write_bold=False, search_attempts=10,
+                                    save=False, save_freq=100):
         """
         Iterates through texts, extracts chemical entities and normalizes
         them
@@ -346,7 +347,7 @@ class SciTextProcessor():
 
                 ### Search entity in PubChem if not already done
                 if name not in self.entity_to_cid.keys():
-                    c = pcp.get_compounds(name, 'name')
+                    c = self.search_pubchem(name, 0, search_attempts)
                     if len(c) == 0:
                         self.entity_to_cid[name] = [None, None]
                         self.entity_counts[name] = 1
@@ -414,6 +415,22 @@ class SciTextProcessor():
                                           indent=4, sort_keys=False,
                                           separators=(',', ': '), ensure_ascii=False)
                         f.write(str(out_))
+
+    def search_pubchem(self, name, attempts, cutoff):
+        if attempts < cutoff - 1:
+            try:
+                c = pcp.get_compounds(name, 'name')
+                return c
+            except TimeoutError:
+                self.search_pubchem(name, attempts+1, cutoff)
+        else:
+            try:
+                c = pcp.get_compounds(name, 'name')
+                return c
+            except TimeoutError:
+                c = []
+                print("WARNING: ENTITY '{}' TIMED OUT {} TIMES".format(name, cutoff))
+                return c
 
     def remove_abbreviations(self, abstract):
         doc = Document(abstract)
