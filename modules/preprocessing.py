@@ -467,6 +467,27 @@ class SciTextProcessor():
                     pass
         return abstract
 
+    def normalize_phrases(self, phrases='default'):
+        if phrases == 'default':
+            phrases = self.phrases
+        pass
+
+    def generate_phrases(self, texts='default', save=False):
+        if texts == 'default':
+            texts = self.clean_texts
+        elif texts == 'chem_norm':
+            texts = self.normalized_texts
+
+        # CODE TO GENERATE LIST OF PHRASES
+        self.phrases = list_of_phrases
+        if save:
+            pass
+            # CODE TO SAVE PHRASES IN PREPROCESSING FILE
+
+    def normalize(self):
+        self.normalize_chemical_entities()
+        self.normalize_phrases()
+
 
     ########### TOKENIZING FUNCTIONS #############
     """
@@ -723,6 +744,12 @@ class SciTextProcessor():
             entity_idxs = json.load(f)
             for k, v in entity_idxs.items():
                 self.entity_idxs[int(k)] = v
+
+    def load_phrases(self, path):
+        """
+        Code to load phrase file
+        """
+        pass
 
     def load_normalizer(self, dir):
         """
