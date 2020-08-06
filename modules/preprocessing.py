@@ -303,6 +303,8 @@ class SciTextProcessor():
         def timeout_handler(signum, frame):
             raise TimeoutException
 
+        signal.signal(signal.SIGALRM, timeout_handler)
+
         self.timedout_entities = []
 
         if texts == 'default':
