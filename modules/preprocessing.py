@@ -303,7 +303,6 @@ class SciTextProcessor():
         def timeout_handler(signum, frame):
             raise TimeoutException
 
-        signal.signal(signal.SIGALRM, timeout_handler)
         self.timedout_entities = []
 
         if texts == 'default':
@@ -363,6 +362,7 @@ class SciTextProcessor():
                 ### Search entity in PubChem if not already done
                 if name not in self.entity_to_cid.keys():
                     c = self.search_pubchem(name, search_attempts, TimeoutException)
+                    signal.alarm(0)
                     if len(c) == 0:
                         self.entity_to_cid[name] = [None, None]
                         self.entity_counts[name] = 1
@@ -453,8 +453,6 @@ class SciTextProcessor():
                 return c
             except TimeoutException:
                 continue
-            else:
-                signal.alarm(0)
         c = []
         print("WARNING: ENTITY '{}' TIMED OUT {} TIMES".format(name, attempts))
         self.timedout_entities.append(name)
