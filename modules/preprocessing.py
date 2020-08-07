@@ -380,7 +380,7 @@ class SciTextProcessor():
                                 self.entity_to_synonyms[iupac_name].append(name)
                             self.entity_counts[self.entity_to_cid[name][1]] = 1
                         else:
-                            self.entity_to_cid[name] = [cid, name]
+                            self.entity_to_cid[name] = [cid, None]
                             self.entity_counts[name] = 1
                 else:
                     if self.entity_to_cid[name][1] is None:
