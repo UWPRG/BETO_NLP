@@ -464,8 +464,20 @@ class SciTextProcessor():
         self.timedout_entities.append(name)
         return c
 
-    def remove_abbreviations(self, abstract):
-        doc = Document(abstract)
+    def remove_abbreviations(self, text):
+        """
+        A text is sent to chemdataextractor which finds all chemical
+        abbreviations. The first instance of the abbreviation is removed based on
+        some heuristic rules (intended to remove its initial definition) and the
+        rest are replaced with the full name
+
+        Parameters:
+            text (str, required): the text from which abbreviations should be removed
+        Returns:
+            text (str): processed text with no abbreviations extracted
+        """
+        escape_chars = ['+']
+        doc = Document(text)
         abbvs = doc.abbreviation_definitions
         cems = doc.cems
         if len(abbvs) > 0:
@@ -474,16 +486,24 @@ class SciTextProcessor():
                 cem_starts = []
                 cem_ends = []
                 if abbv[-1] is not None:
-                    abbv_dict[abbv[0][0]] = [' '.join(abbv[1])]
+                    abbv_name = abbv[0][0]
+                    escape_abbv = ''
+                    for char in abbv_name:
+                        if char in escape_chars:
+                            escape_abbv += r'\{}'.format(char)
+                        else:
+                            escape_abbv += char
+                    abbv_name = escape_abbv
+                    abbv_dict[abbv_name] = [' '.join(abbv[1])]
                     for cem in cems:
-                        if cem.text == abbv[0][0]:
+                        if cem.text == abbv_name:
                             cem_starts.append(cem.start)
                             cem_ends.append(cem.end)
                     if len(cem_starts) > 0:
                         low_idx = cem_starts[np.argmin(cem_starts)]
                     else:
                         low_idx = 0
-                    abbv_dict[abbv[0][0]].append(low_idx)
+                    abbv_dict[abbv_name].append(low_idx)
             abbv_dict = {k: v for k, v in sorted(abbv_dict.items(), key=lambda item: item[1][1])}
             index_change = 0
             for abbv in abbv_dict.keys():
@@ -497,8 +517,8 @@ class SciTextProcessor():
                             cem_starts.append(cem.start)
                             cem_ends.append(cem.end)
                     if len(cem_starts) == 1:
-                        if abstract[cem_starts[0]+index_change-1]+abstract[cem_ends[0]+index_change] == '()':
-                            abstract = abstract[:cem_starts[0]-2+index_change] + abstract[cem_ends[0]+1+index_change:]
+                        if text[cem_starts[0]+index_change-1]+text[cem_ends[0]+index_change] == '()':
+                            text = text[:cem_starts[0]-2+index_change] + text[cem_ends[0]+1+index_change:]
                             index_change += cem_starts[0] - cem_ends[0] - 3
                         else:
                             pass
@@ -506,15 +526,15 @@ class SciTextProcessor():
                         low_idx = np.argmin(cem_starts)
                         cem_start_low = cem_starts[low_idx]
                         cem_end_low = cem_ends[low_idx]
-                        if abstract[cem_start_low+index_change-1]+abstract[cem_end_low+index_change] == '()':
-                            abstract = abstract[:cem_start_low-2+index_change] + abstract[cem_end_low+1+index_change:]
+                        if text[cem_start_low+index_change-1]+text[cem_end_low+index_change] == '()':
+                            text = text[:cem_start_low-2+index_change] + text[cem_end_low+1+index_change:]
                             index_change += cem_start_low - cem_end_low - 3
                         else:
                             pass
-                    abstract = re.sub(r'([\s]){}([.,;\s]|$)'.format(abbv), r' {}\2'.format(non_abbv), abstract)
+                    text = re.sub(r'([\s]){}([.,;\s]|$)'.format(abbv), r' {}\2'.format(non_abbv), text)
                 else:
                     pass
-        return abstract
+        return text
 
     def normalize_phrases(self, phrases='default'):
         if phrases == 'default':
