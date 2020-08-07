@@ -372,12 +372,16 @@ class SciTextProcessor():
                         c = c[0]
                         cid = c.cid
                         iupac_name = c.iupac_name
-                        self.entity_to_cid[name] = [cid, iupac_name]
-                        if iupac_name not in self.entity_to_synonyms.keys():
-                            self.entity_to_synonyms[iupac_name] = [name]
+                        if iupac_name is not None:
+                            self.entity_to_cid[name] = [cid, iupac_name]
+                            if iupac_name not in self.entity_to_synonyms.keys():
+                                self.entity_to_synonyms[iupac_name] = [name]
+                            else:
+                                self.entity_to_synonyms[iupac_name].append(name)
+                            self.entity_counts[self.entity_to_cid[name][1]] = 1
                         else:
-                            self.entity_to_synonyms[iupac_name].append(name)
-                        self.entity_counts[self.entity_to_cid[name][1]] = 1
+                            self.entity_to_cid[name] = [cid, name]
+                            self.entity_counts[name] = 1
                 else:
                     if self.entity_to_cid[name][1] is None:
                         self.entity_counts[name] += 1
