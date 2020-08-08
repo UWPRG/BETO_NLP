@@ -279,7 +279,7 @@ class SciTextProcessor():
 
     def normalize_chemical_entities(self, texts='default', remove_abbreviations=True,
                                     verbose=False, write_bold=False, search_attempts=10,
-                                    save=False, save_freq=100):
+                                    save=False, save_freq=100, save_dir='preprocessor_files'):
         """
         Iterates through texts, extracts chemical entities and normalizes
         them
@@ -415,23 +415,24 @@ class SciTextProcessor():
             ### Save every n abstracts
             if (i+1) % save_freq == 0 or i == len(texts) - 1:
                 if save:
-                    os.makedirs('preprocessor_files', exist_ok=True)
-                    np.save('preprocessor_files/normalized_texts.npy', np.array(self.normalized_texts)) # all texts
+                    os.makedirs(save_dir, exist_ok=True)
+                    np.save('{}/normalized_texts.npy'.format(save_dir), np.array(self.normalized_texts)) # all texts
 
                     for iupac_name, synonyms in self.entity_to_synonyms.items():
                         self.entity_to_synonyms[iupac_name] = list(set(synonyms))
                     search_history = {'entity_to_cid': self.entity_to_cid,
                                       'entity_to_synonyms': self.entity_to_synonyms}
 
-                    preprocess_history = {'entities_per_text': self.entities_per_text,
-                                          'entity_counts': self.entity_counts}
-
-                    with io.open('preprocessor_files/search_history.json', 'w', encoding='utf8') as f: # map of entity names to CID/iupac names for quick recall
+                    with io.open('{}/search_history.json'.format(save_dir), 'w', encoding='utf8') as f: # map of entity names to CID/iupac names for quick recall
                         out_ = json.dumps(search_history,                                              # map of CIDs to all unique synonyms
                                           indent=4, sort_keys=False,
                                           separators=(',', ': '), ensure_ascii=False)
                         f.write(str(out_))
-                    with io.open('preprocessor_files/preprocess_history.json', 'w', encoding='utf8') as f: # list of entities in each text with span
+
+                    preprocess_history = {'entities_per_text': self.entities_per_text,
+                                          'entity_counts': self.entity_counts}
+
+                    with io.open('{}/preprocess_history.json'.format(save_dir), 'w', encoding='utf8') as f: # list of entities in each text with span
                         out_ = json.dumps(preprocess_history,                                              # dictionary of unique entities and their number of occurrences
                                           indent=4, sort_keys=False,
                                           separators=(',', ': '), ensure_ascii=False)
