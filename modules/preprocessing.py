@@ -272,6 +272,7 @@ class SciTextProcessor():
         if clean_abstract.endswith(' Crown Copywrite'):
             clean_abstract.replace(' Crown Copywrite', '')
 
+        clean_abstract = re.sub('<\w*>|<\/\w*>',' ', clean_abstract) #remove the unwanted HTML tags.
         return clean_abstract
 
 
