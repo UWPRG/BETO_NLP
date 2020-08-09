@@ -414,7 +414,7 @@ class SciTextProcessor():
             self.normalized_texts.append(text)
 
             ### Save every n abstracts
-            if (i+1) % save_freq == 0 or i == len(texts) - 1:
+            if (i+1) % save_freq == 0 or i == len(texts) + start_idx - 1:
                 if save:
                     os.makedirs(save_dir, exist_ok=True)
                     np.save('{}/normalized_texts.npy'.format(save_dir), np.array(self.normalized_texts)) # all texts
