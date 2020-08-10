@@ -417,7 +417,9 @@ class SciTextProcessor():
             if (i+1) % save_freq == 0 or i == len(texts) + start_idx - 1:
                 if save:
                     os.makedirs(save_dir, exist_ok=True)
-                    np.save('{}/normalized_texts.npy'.format(save_dir), np.array(self.normalized_texts)) # all texts
+                    with open('{}/normalized_texts.txt', 'w') as f:
+                        for text in self.normalized_texts:
+                            f.write(text+'\n')
 
                     for iupac_name, synonyms in self.entity_to_synonyms.items():
                         self.entity_to_synonyms[iupac_name] = list(set(synonyms))
@@ -787,7 +789,10 @@ class SciTextProcessor():
         Parameters:
             path (str, required): Path to numpy file containing normalized texts
         """
-        self.normalized_texts = list(np.load(path, allow_pickle=True))
+        with open(path, 'r') as f:
+            for line in f:
+                line = line.split('\n')[0]
+                self.normalized_texts.append(line)
 
     def load_tokenized_texts(self, path):
         """
@@ -849,7 +854,7 @@ class SciTextProcessor():
         fns = os.listdir(dir)
         for fn in fns:
             path = os.path.join(dir, fn)
-            if fn == 'normalized_texts.npy':
+            if fn == 'normalized_texts.txt':
                 self.load_normalized_texts(path)
             elif fn == 'search_history.json':
                 self.load_search_history(path)
