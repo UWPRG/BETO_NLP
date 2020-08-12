@@ -9,6 +9,7 @@ import multiprocessing
 from os import system, name
 import json
 import time
+from tqdm import trange
 from IPython.display import clear_output
 from pybliometrics.scopus import config
 from elsapy.elsclient import ElsClient
@@ -241,8 +242,9 @@ class CorpusGenerator():
         abstract = []
         journal_name = []
 
-        for directory in directory_list:
-            json_dict = load_journal_json(f'{pii_path}/{directory}/{directory}.json')
+        for i in trange(len(directory_list)):
+            directory = directory_list[i]
+            json_dict = self.load_journal_json(f'{pii_path}/{directory}/{directory}.json')
 
             for year in json_dict:
                 for pub in json_dict[year]:
