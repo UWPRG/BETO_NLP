@@ -29,7 +29,7 @@ class SciTextProcessor():
             a. Chemical Entities
             b. Properties
     """
-    def __init__(self, texts, type='abstract'):
+    def __init__(self, texts=None, type='abstract'):
         """
         Parameters:
             texts (list, required): list of texts to be preprocessed
@@ -37,7 +37,9 @@ class SciTextProcessor():
         """
         self.type = type
         self.min_len = 5
-        if isinstance(texts, str):
+        if texts is None:
+            self.texts = []
+        elif isinstance(texts, str):
             self.texts = [texts]
         else:
             self.texts = texts
@@ -417,7 +419,7 @@ class SciTextProcessor():
             if (i+1) % save_freq == 0 or i == len(texts) + start_idx - 1:
                 if save:
                     os.makedirs(save_dir, exist_ok=True)
-                    with open('{}/normalized_texts.txt', 'w') as f:
+                    with open('{}/normalized_texts.txt'.format(save_dir), 'w') as f:
                         for text in self.normalized_texts:
                             f.write(text+'\n')
 
@@ -836,7 +838,7 @@ class SciTextProcessor():
         fns = os.listdir(dir)
         for fn in fns:
             path = os.path.join(dir, fn)
-            if fn == 'normalized_texts.npy':
+            if fn == 'normalized_texts.txt':
                 self.load_normalized_texts(path)
             elif fn == 'search_history.json':
                 self.load_search_history(path)
