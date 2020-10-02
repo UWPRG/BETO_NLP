@@ -2,6 +2,7 @@ import io
 import os
 import sys
 import re
+import math
 import json
 import time
 import regex
@@ -10,9 +11,13 @@ import string
 import pickle
 import numpy as np
 import pandas as pd
+from tqdm import tqdm
 from tqdm import trange
+import multiprocessing
+from multiprocessing import Pool, RLock
 
 import pubchempy as pcp
+from pubchempy import PubChemHTTPError
 from chemdataextractor import Document
 from chemdataextractor.doc import Paragraph
 from chemdataextractor.nlp.tokenize import ChemWordTokenizer
@@ -117,7 +122,7 @@ class SciTextProcessor():
                 if abstract is None:
                     sys.stdout.write("\r\033[K"+"WARNING: TEXT LIST CONTAINS EMPTY ABSTRACTS. NOT ALL SAMPLES CAN BE CLEANED.")
                     warned = True
-                    self.dropped_idxs[i]
+                    self.dropped_idxs.append(i)
                 else:
                     abstract = self.clean_abstract(abstract)
                     if len(abstract) < self.min_len:
@@ -280,9 +285,10 @@ class SciTextProcessor():
 
     ############ NORMALIZATION FUNCTIONS ##############
 
+
     def normalize_chemical_entities(self, texts='default', remove_abbreviations=True,
-                                    verbose=False, write_bold=False, search_attempts=10,
-                                    save=False, save_freq=100, save_dir='preprocessor_files'):
+                                    search_attempts=10, save=False, save_freq=1000,
+                                    save_dir='preprocessor_files'):
         """
         Iterates through texts, extracts chemical entities and normalizes
         them
@@ -292,8 +298,6 @@ class SciTextProcessor():
             remove_abbreviations (bool): If true then replace abbreviated
                                          entities with full name (only those
                                          extracted by chemdataextractor)
-            verbose (bool): If true then prints text pre- and post-processing
-            write_bold (bool): If true then prints chemical entities bolded to terminal
             save (bool): If true then saves texts, search history and run history
                          to preprocessor_files folder. WARNING: Running this function
                          twice without moving saved files will overwrite your previous
@@ -321,19 +325,22 @@ class SciTextProcessor():
         self.entity_to_cid['sugar'] = [None, None]
         self.entity_to_cid['chloro'] = [None, None]
         self.entity_to_cid['alcohol'] = [None, None]
+        self.entity_to_cid['heritage'] = [None, None]
         self.entity_to_synonyms['carbon monoxide'] = ['CO']
         self.entity_to_synonyms['cobalt'] = ['Co']
         self.entity_to_synonyms['nitric oxide'] = ['NO']
         self.entity_to_synonyms['nobelium'] = ['No']
-        for k, v in self.entity_to_cid.items():
-            if v[1] is None:
-                self.entity_counts[k] = 1
-            else:
-                self.entity_counts[v[1]] = 1
+        if len(self.entity_counts.keys()) == 0:
+            for k, v in self.entity_to_cid.items():
+                if v[1] is None:
+                    self.entity_counts[k] = 0
+                else:
+                    self.entity_counts[v[1]] = 0
         start_idx = len(self.normalized_texts)
         for i in trange(start_idx, len(texts)+start_idx):
             text_idx = i - start_idx
             text = texts[text_idx]
+
             ### Remove and normalize abbreviations
             if remove_abbreviations:
                 text = self.remove_abbreviations(text)
@@ -341,9 +348,6 @@ class SciTextProcessor():
                 pass
 
             doc = Document(text)
-            if verbose:
-                print('---Text {}---'.format(text_idx+1))
-                print(text+'\n')
             cems = doc.cems
             entity_list = []
             for cem in cems:
@@ -381,7 +385,10 @@ class SciTextProcessor():
                                 self.entity_to_synonyms[iupac_name] = [name]
                             else:
                                 self.entity_to_synonyms[iupac_name].append(name)
-                            self.entity_counts[self.entity_to_cid[name][1]] = 1
+                            if iupac_name in self.entity_counts.keys():
+                                self.entity_counts[iupac_name] += 1
+                            else:
+                                self.entity_counts[iupac_name] = 1
                         else:
                             self.entity_to_cid[name] = [cid, None]
                             self.entity_counts[name] = 1
@@ -401,17 +408,10 @@ class SciTextProcessor():
                     replacement_name = self.entity_to_cid[name][1]
                 else:
                     replacement_name = name
-                if write_bold:
-                    replacement_delta = len(replacement_name) - (stop - start) + 8
-                    text = text[:start+index_change] + '\033[1m' + replacement_name + '\033[0m' + text[stop+index_change:]
-                else:
-                    replacement_delta = len(replacement_name) - (stop - start)
-                    text = text[:start+index_change] + replacement_name + text[stop+index_change:]
+                replacement_delta = len(replacement_name) - (stop - start)
+                text = text[:start+index_change] + replacement_name + text[stop+index_change:]
                 index_change += replacement_delta
                 self.entities_per_text[i].append((replacement_name, start+index_change-replacement_delta, stop+index_change, name))
-            if verbose:
-                print(text)
-                print('\n')
 
             self.normalized_texts.append(text)
 
@@ -461,8 +461,11 @@ class SciTextProcessor():
         for i in range(attempts):
             try:
                 signal.alarm(10)
-                c = pcp.get_compounds(name, 'name')
-                return c
+                try:
+                    c = pcp.get_compounds(name, 'name')
+                    return c
+                except PubChemHTTPError:
+                    return []
             except TimeoutException:
                 continue
         c = []
@@ -482,7 +485,7 @@ class SciTextProcessor():
         Returns:
             text (str): processed text with no abbreviations extracted
         """
-        escape_chars = ['+']
+        escape_chars = ['+', '*', '\\']
         doc = Document(text)
         abbvs = doc.abbreviation_definitions
         cems = doc.cems
@@ -501,6 +504,13 @@ class SciTextProcessor():
                             escape_abbv += char
                     abbv_name = escape_abbv
                     abbv_dict[abbv_name] = [' '.join(abbv[1])]
+                    non_abbv = ''
+                    for char in abbv_dict[abbv_name][0]:
+                        if char in escape_chars:
+                            non_abbv += r'\{}'.format(char)
+                        else:
+                            non_abbv += char
+                    abbv_dict[abbv_name] = [non_abbv]
                     for cem in cems:
                         if cem.text == abbv_name:
                             cem_starts.append(cem.start)
@@ -562,6 +572,182 @@ class SciTextProcessor():
     def normalize(self):
         self.normalize_chemical_entities()
         self.normalize_phrases()
+
+    # def mp_normalize_chemical_entities(self, texts='default',
+    #                                    remove_abbreviations=True, search_attempts=10,
+    #                                    save=False, chunk_size=100, n_workers='max',
+    #                                    save_dir='preprocessor_files'):
+    #     """
+    #     Parallelizable version of the function to normalize chemical entities.
+    #     Allows the user to speed up pubchem searching by using multiple processes
+    #     to search independently
+    #
+    #     Parameters:
+    #         texts (list, required): List of texts to normalize
+    #         remove_abbreviations (bool): If true then replace abbreviated
+    #                                      entities with full name (only those
+    #                                      extracted by chemdataextractor)
+    #         save (bool): If true then saves texts, search history and run history
+    #                      to preprocessor_files folder. WARNING: Running this function
+    #                      twice without moving saved files will overwrite your previous
+    #                      saves
+    #         search_attempts (int): The number of times a failed search will be repeated
+    #                                before giving up
+    #         chunk_size (int): The size of the chunk sent to an individual processor
+    #         n_workers (int): The number of processes to use. Defaults to the maximum
+    #         save_dir (str): The directory to save preprocess files to
+    #     """
+    #     self.remove_abbrevations = remove_abbreviations
+    #     self.search_attempts = search_attempts
+    #     if texts == 'default':
+    #         texts = self.clean_texts
+    #     if n_workers == 'max':
+    #         n_workers = multiprocessing.cpu_count()
+    #     full_chunk = chunk_size * n_workers
+    #     n_loops = math.ceil(len(texts) / full_chunk)
+    #
+    #     ### Some entity names are ambiguous and must be hard coded
+    #     self.entity_to_cid['CO'] = [281, 'carbon monoxide']
+    #     self.entity_to_cid['Co'] = [104730, 'cobalt']
+    #     self.entity_to_cid['NO'] = [145068, 'nitric oxide']
+    #     self.entity_to_cid['No'] = [24822, 'nobelium']
+    #     self.entity_to_cid['sugar'] = [None, None]
+    #     self.entity_to_cid['chloro'] = [None, None]
+    #     self.entity_to_cid['alcohol'] = [None, None]
+    #     self.entity_to_synonyms['carbon monoxide'] = ['CO']
+    #     self.entity_to_synonyms['cobalt'] = ['Co']
+    #     self.entity_to_synonyms['nitric oxide'] = ['NO']
+    #     self.entity_to_synonyms['nobelium'] = ['No']
+    #     if len(self.entity_counts.keys()) == 0:
+    #         for k, v in self.entity_to_cid.items():
+    #             if v[1] is None:
+    #                 self.entity_counts[k] = 1
+    #             else:
+    #                 self.entity_counts[v[1]] = 1
+    #     start_idx = len(self.normalized_texts)
+    #     for i in range(n_loops):
+    #         pool = Pool(processes=n_workers, initargs=(RLock(),), initializer=tqdm.set_lock)
+    #         text_chunks = []
+    #         for j in range(n_workers):
+    #             start_chunk = i*full_chunk+j*chunk_size
+    #             end_chunk = i*full_chunk+(j+1)*chunk_size
+    #             if end_chunk >= len(texts):
+    #                 end_chunk = len(texts)
+    #             text_chunks.append(texts[start_chunk:end_chunk])
+    #
+    #         jobs = [pool.apply_async(self.norm_ce_loop, args=(text_chunk, i,)) for i, text_chunk in enumerate(text_chunks)]
+    #         pool.close()
+    #
+    #         unsorted_result = [job.get() for job in jobs]
+    #         result = [val[1] for val in sorted(unsorted_result)]
+    #         print(result)
+    #
+    # def norm_ce_loop(self, texts, worker_idx):
+    #     """
+    #     Iterates through texts, extracts chemical entities and normalizes
+    #     them. Abridged version used for multiprocessing
+    #
+    #     Parameters:
+    #         texts (list, required): List of texts to normalize
+    #         worker_idx (int): The idx of the worker
+    #         queue (Queue): Queue object to store returned data
+    #     """
+    #     ### Custom exception for catching server-side pubchem errors
+    #     class TimeoutException(Exception):
+    #         pass
+    #
+    #     def timeout_handler(signum, frame):
+    #         raise TimeoutException
+    #
+    #     signal.signal(signal.SIGALRM, timeout_handler)
+    #
+    #     ### tqdm progress bar
+    #     tqdm_text = '#' + '{}'.format(worker_idx).zfill(3)
+    #
+    #     normalized_texts = []
+    #     entity_to_cid = self.entity_to_cid.copy()
+    #     entity_to_synonyms = self.entity_to_synonyms.copy()
+    #     entity_counts = self.entity_counts.copy()
+    #     entities_per_text = {}
+    #
+    #     with tqdm(total=len(texts), desc=tqdm_text, position=worker_idx+1) as pbar:
+    #         for text in texts:
+    #             ### Remove and normalize abbreviations
+    #             if self.remove_abbreviations:
+    #                 text = self.remove_abbreviations(text)
+    #             else:
+    #                 pass
+    #
+    #             doc = Document(text)
+    #             cems = doc.cems
+    #             entity_list = []
+    #             for cem in cems:
+    #                 ### Check if abbreviated valence state
+    #                 elem_valence = self.VALENCE_REGX.match(cem.text)
+    #                 if elem_valence:
+    #                     elem = elem_valence.group(1)
+    #                     valence = elem_valence.group(2)
+    #                     elem = self.element_dict[elem]
+    #                     cem.text = elem+valence
+    #
+    #                 ### Check if ambiguous formula
+    #                 if self.FORMULA_REGX.match(cem.text):
+    #                     name = cem.text
+    #                 else:
+    #                     name = cem.text.lower()
+    #
+    #                 ### Add entity name, start and stop indices to dictionary
+    #                 entity_list.append((name, cem.start, cem.end))
+    #                 ### Search entity in PubChem if not already done
+    #                 if name not in entity_to_cid.keys():
+    #                     c = self.search_pubchem(name, self.search_attempts, TimeoutException)
+    #                     signal.alarm(0)
+    #                     if len(c) == 0:
+    #                         entity_to_cid[name] = [None, None]
+    #                         entity_counts[name] = 1
+    #                     else:
+    #                         c = c[0]
+    #                         cid = c.cid
+    #                         iupac_name = c.iupac_name
+    #                         if iupac_name is not None:
+    #                             entity_to_cid[name] = [cid, iupac_name]
+    #                             if iupac_name not in entity_to_synonyms.keys():
+    #                                 entity_to_synonyms[iupac_name] = [name]
+    #                             else:
+    #                                 entity_to_synonyms[iupac_name].append(name)
+    #                             if iupac_name in entity_counts.keys():
+    #                                 entity_counts[iupac_name] += 1
+    #                             else:
+    #                                 entity_counts[iupac_name] = 1
+    #                         else:
+    #                             entity_to_cid[name] = [cid, None]
+    #                             entity_counts[name] = 1
+    #                 else:
+    #                     if entity_to_cid[name][1] is None:
+    #                         entity_counts[name] += 1
+    #                     else:
+    #                         entity_counts[self.entity_to_cid[name][1]] += 1
+    #
+    #             ### Sort named entities by location in text and replace with synonym
+    #             entity_list.sort(key=lambda x:x[1])
+    #             index_change = 0
+    #             entities_per_text[i] = []
+    #             for entity in entity_list:
+    #                 name, start, stop = entity
+    #                 if entity_to_cid[name][1] is not None:
+    #                     replacement_name = entity_to_cid[name][1]
+    #                 else:
+    #                     replacement_name = name
+    #                 replacement_delta = len(replacement_name) - (stop - start)
+    #                 text = text[:start+index_change] + replacement_name + text[stop+index_change:]
+    #                 index_change += replacement_delta
+    #                 entities_per_text[i].append((replacement_name, start+index_change-replacement_delta, stop+index_change, name))
+    #
+    #             normalized_texts.append(text)
+    #             pbar.update(1)
+    #
+    #     return worker_idx, [normalized_texts, entity_to_cid, entity_to_synonyms, entity_counts, entities_per_text]
+
 
 
     ########### TOKENIZING FUNCTIONS #############
@@ -818,8 +1004,8 @@ class SciTextProcessor():
         """
         with open(path) as f:
             entity_idxs = json.load(f)
-            for k, v in entity_idxs.items():
-                self.entity_idxs[int(k)] = v
+        for k, v in entity_idxs.items():
+            self.entity_idxs[int(k)] = v
 
     def load_phrases(self, path):
         """
