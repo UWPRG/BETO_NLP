@@ -23,6 +23,12 @@ from chemdataextractor.doc import Paragraph
 from chemdataextractor.nlp.tokenize import ChemWordTokenizer
 
 from mat2vec.processing.process import MaterialsTextProcessor
+from gensim.models.phrases import Phraser
+from nltk.tokenize import sent_tokenize, word_tokenize
+from nltk.stem import WordNetLemmatizer
+from nltk.tokenize import word_tokenize
+from gensim.models.word2vec import LineSentence
+from gensim.models.phrases import Phrases, Phraser
 
 
 class SciTextProcessor():
@@ -48,6 +54,20 @@ class SciTextProcessor():
             self.texts = [texts]
         else:
             self.texts = texts
+        
+        #common terms and excluded terms for phrase generation
+        self.COMMON_TERMS = ["-", "-", b"\xe2\x80\x93", b"'s", b"\xe2\x80\x99s", "from", "as", "at", "by", "of", "on",
+                             "into", "to", "than", "over", "in", "the", "a", "an", "/", "under", ":"]
+        self.EXCLUDE_PUNCT = ["=", ".", ",", "(", ")", "<", ">", "\"", "“", "”", "≥", "≤", "<nUm>"]
+        self.EXCLUDE_TERMS = ["=", ".", ",", "(", ")", "<", ">", "\"", "“", "”", "≥", "≤", "<nUm>", "been", "be", "are",
+                             "which", "were", "where", "have", "important", "has", "can", "or", "we", "our",
+                             "article", "paper", "show", "there", "if", "these", "could", "publication",
+                             "while", "measured", "measure", "demonstrate", "investigate", "investigated",
+                             "demonstrated", "when", "prepare", "prepared", "use", "used", "determine",
+                             "determined", "find", "successfully", "newly", "present",
+                             "reported", "report", "new", "characterize", "characterized", "experimental",
+                             "result", "results", "showed", "shown", "such", "after",
+                             "but", "this", "that", "via", "is", "was", "and", "using"]
 
         ### Element text and regex
         self.ELEMENTS = ["H", "He", "Li", "Be", "B", "C", "N", "O", "F", "Ne", "Na", "Mg", "Al", "Si", "P", "S", "Cl", "Ar", "K",
@@ -143,6 +163,7 @@ class SciTextProcessor():
         self.entity_to_synonyms = {}
         self.tokenized_texts = {}
         self.entity_idxs = {}
+        self.phrase_idxs = {}
 
 
     ########## CLEANING FUNCTIONS ###############
@@ -281,6 +302,114 @@ class SciTextProcessor():
 
         clean_abstract = re.sub('<\w*>|<\/\w*>',' ', clean_abstract) #remove the unwanted HTML tags.
         return clean_abstract
+    
+    
+    def lemmatized_abstracts(self, abstract_list, file_name='lemmatized_abstracts.txt'):
+        """
+        cleans the abstract through lemmatization so that we can 
+        use them to generate phrases.
+         Parameters:
+            abstract_list (str, required): The cleaned abstract
+            file_name (str, default = 'lemmatized_abstracts.txt') : name of the file to
+            temporary store the lemmatized abstracts
+        Returns:
+            writes a file 'lemmatized_abstracts.txt' with all the lemmatized abstracts 
+            unless a different file_name is given by the user
+            return the file_name so it can be deleted after processing
+        """
+        abstracts_for_phrase = []
+        wnl = WordNetLemmatizer()
+        print("lemmatizing abstracts and writing file")
+        
+        with open (file_name, 'w') as f:
+            for i in trange(len(abstract_list)):
+                abstract = abstract_list[i]
+                tokens = [token.lower() for token in word_tokenize(abstract)]
+                lemmatized_words = [wnl.lemmatize(token) for token in tokens]
+                lemmatized_abstract = " ".join(lemmatized_words)
+                f.write(lemmatized_abstract)
+                f.write('\n')
+        return file_name
+                
+    #Next two functions (wordgrams and exclude_words) are from mat2vec
+    
+    def wordgrams(self, sent, common_terms, excluded_terms, depth, min_count, 
+                  threshold, pass_track=0):
+        """
+        This function generate a phraser object with phasegrams from the preprocessed 
+        abstracts/full texts 
+        Parameters:
+            sent (LineSentece object, required): The entire corpus is passed through
+                gensim LineSentence to generate a LineSentence object
+            commom_terms (list of strings, required) : a list of common English terms
+                should be included in the phrases
+                from self.COMMON_TERMS
+            excluded_terms (list of strings, required) : a list of common English terms
+                should be excluded from the phrases, phases having these terms will not 
+                be considered
+                from self.EXCLUDED_TERMS
+            depth (int, required) : number of passes throughout the corpus to make phrases
+                depth = 2 will create maximum trigrams as phrases
+            min_count (float, optional) – Ignore all words and bigrams with total 
+                collected count lower than this value.
+            threshold (float, optional) – Represent a score threshold for forming 
+                the phrases (higher means fewer phrases). A phrase of words a followed 
+                by b is accepted if the score of the phrase is greater than threshold. 
+                Heavily depends on concrete scoring-function, see the scoring parameter.
+            pass_track (int, required) : keep track of how many passes are made
+        Returns:
+            grams : a phraser object with phrasegrams
+        """
+        print("Generating phrases, pass = {}".format(pass_track+1))
+        if depth == 0:
+            return None
+        else:
+            """Builds word grams according to the specification."""
+            phrases = Phrases(
+                sent,
+                common_terms=common_terms,
+                min_count=min_count,
+                threshold=threshold,
+                delimiter=b' ')
+            #print(phrases)
+            grams = Phraser(phrases)
+            grams.phrasegrams = self.exclude_words(grams.phrasegrams, excluded_terms)
+            pass_track += 1
+            if pass_track < depth:
+                return self.wordgrams(grams[sent], common_terms, excluded_terms, 
+                                 depth, min_count, threshold,  pass_track)
+            else:
+                return grams
+            
+    def exclude_words(self, phrasegrams, words):
+        """
+        Given a list of words, excludes those from the keys of the phrase dictionary.
+        Parameters:
+            Phrasegrams : a phraser.phrasegram object, generated from wordgram function
+            word (list of words): words those should be excluded
+        Returns:
+            new_phasegrams : a new phrasegram object that excludes phrases containing 
+                words from the given list
+    
+        """
+        new_phrasergrams = {}
+        words_re_list = []
+        for word in words:
+            we = regex.escape(word)
+            words_re_list.append("^" + we + "$|^" + we + "_|_" + we + "$|_" + we + "_")
+
+        word_reg = regex.compile(r""+"|".join(words_re_list))
+        for gram in tqdm(phrasegrams):
+            valid = True
+            for sub_gram in gram:
+                if word_reg.search(sub_gram.decode("unicode_escape", "ignore")) is not None:
+                    valid = False
+                    break
+                if not valid:
+                    continue
+            if valid:
+                new_phrasergrams[gram] = phrasegrams[gram]
+        return new_phrasergrams
 
 
     ############ NORMALIZATION FUNCTIONS ##############
@@ -557,21 +686,48 @@ class SciTextProcessor():
             phrases = self.phrases
         pass
 
-    def generate_phrases(self, texts='default', save=False):
-        if texts == 'default':
-            texts = self.clean_texts
-        elif texts == 'chem_norm':
-            texts = self.normalized_texts
-
+    def generate_phrases(self, depth=2, min_count=10, 
+                        threshold=15, save=True):
+        """
+        Generate phrases for the entire corpus and writes them in a file
+        Parameters:
+            depth (int, required) : number of passes throughout the corpus to make phrases
+                depth = 2 will create maximum trigrams as phrases
+            min_count (float, optional) – Ignore all words and bigrams with total 
+                collected count lower than this value.
+            threshold (float, optional) – Represent a score threshold for forming 
+                the phrases (higher means fewer phrases). A phrase of words a followed 
+                by b is accepted if the score of the phrase is greater than threshold. 
+                Heavily depends on concrete scoring-function, see the scoring parameter.
+            save (boolean, default=True): write a phrasegram file if True
+        Returns:
+            grams : a phraser object with phrasegrams
+        """
+        abstracts_list = self.clean_texts
+        
+        abstract_file = self.lemmatized_abstracts(self.clean_texts)
+        
+        processed_sentences = LineSentence(abstract_file)
         # CODE TO GENERATE LIST OF PHRASES
-        self.phrases = list_of_phrases
+        phraser = self.wordgrams(processed_sentences,self.COMMON_TERMS,
+                                self.EXCLUDE_TERMS+ self.EXCLUDE_PUNCT, depth=depth, 
+                                 min_count=min_count, threshold=threshold)            
+        
+        #self.phrases = list_of_phrases
         if save:
-            pass
+            os.makedirs('preprocessor_files', exist_ok=True)
+            phraser.save("./preprocessor_files/phraser.pkl")
             # CODE TO SAVE PHRASES IN PREPROCESSING FILE
+            self.phraser_path = './preprocessor_files/phraser.pkl'
+            
+        # deleting the lemmatized file    
+        os.remove(abstract_file)
+        print("lemmatized abstract file deleted")
 
     def normalize(self):
         self.normalize_chemical_entities()
         self.normalize_phrases()
+
 
     # def mp_normalize_chemical_entities(self, texts='default',
     #                                    remove_abbreviations=True, search_attempts=10,
@@ -758,7 +914,8 @@ class SciTextProcessor():
     """
 
     def tokenize(self, texts='default', entities='default', use_entities=True,
-                 keep_sentences=True, exclude_punct=False, save=False):
+                 keep_sentences=True, exclude_punct=False, make_phrases=False, 
+                 return_tokenize=False, save=False):
         """
         Takes the set of normalized texts and tokenizes them
 
@@ -818,6 +975,7 @@ class SciTextProcessor():
                 ### Split text into sentences
                 tokens = []
                 self.entity_idxs[i] = []
+                self.phrase_idxs[i] = []
                 para = Paragraph(text)
                 prior_split = 0
                 for j, sentence in enumerate(para.sentences):
@@ -842,6 +1000,25 @@ class SciTextProcessor():
                                                      exclude_punct=exclude_punct,
                                                      normalize_materials=False,
                                                      split_oxidation=False)
+                    if make_phrases:
+                        wnl = WordNetLemmatizer()
+                        #sentence_tokens = [wnl.lemmatize(token) for token in sentence_tokens]
+                        lemma_tokens = [wnl.lemmatize(token) for token in sentence_tokens]
+                        #sentence_tokens = self.make_phrases(sentence_tokens)
+                        sentence_tokens = self.make_phrases(lemma_tokens, sentence_tokens)
+                        sentence_phrase_idx = [[t, j] for j, t in enumerate(sentence_tokens) 
+                                               if t.count(' ') > 0]
+                        if len(sentence_phrase_idx) > 0:
+                            for item in sentence_phrase_idx:
+                                item.insert(1, 'phrase') 
+                                                  
+                        #print(sentence_phrase_idx)
+#                         for item in sentence_phrase_idx:
+#                             item.insert(1, 'phrase')
+#                             print(item)
+                        self.phrase_idxs[i].append(sentence_phrase_idx)
+#                         print(sentence_tokens)
+#                         print(lemma_tokens)
                     tokens.append(sentence_tokens)
             self.tokenized_texts[i] = tokens
 
@@ -859,6 +1036,55 @@ class SciTextProcessor():
                                   indent=4, sort_keys=False,
                                   separators=(',', ': '), ensure_ascii=False)
                 f.write(str(out_))
+        
+        if return_tokenize:
+            return self.tokenized_texts
+
+    def make_phrases(self, lemma, sent, reps=2):
+        """Generates phrases from a sentence of words.
+        Args:
+            sentence: A list of tokens (strings).
+            reps: How many times to combine the words.
+        Returns:
+            A list of strings where the strings in the original list are combined
+            to form phrases, separated from each other with an underscore " ".
+        """
+        
+        self.phraser_path = './preprocessor_files/phraser.pkl'
+        self.phraser = Phraser.load(self.phraser_path)
+        while reps > 0:
+            lemma = self.phraser[lemma]
+            reps -= 1
+            
+        # The following part of the code takes part of the lemmatization
+        # in actual tokenized inputs, we only want lemmatozed phrases, so this code snippet compares
+        # lemmatized vs non-lemmatized tokens and return only lemmatized phrases with
+        # non-lemmatized other tokens
+        phrase_identified = [[j, t] for j, t in enumerate(lemma) if t.count(' ') > 0]
+        
+        if(len(phrase_identified) > 0):
+            pos = 0
+            for item in phrase_identified:
+                location = item[0] - pos
+                num_words = item[1].count(' ')
+                for i in range(num_words + 1):
+                    sent.pop(location)
+                pos = num_words
+
+            for i, item in enumerate(phrase_identified):
+                sent.insert(item[0], item[1])
+
+        return sent
+    
+    def get_phrases_with_words(self, word):
+        
+        tokenized_texts = self.tokenize(texts='default', make_phrases=True, return_tokenize=True)
+        for key in tokenized_texts:
+            for sentence in tokenized_texts[key]:
+                for item in sentence:
+                    if word in item and '-' in item :
+                        print(item)
+    
 
     def extract_entity_tokens(self, text, entity_spans):
         """
@@ -1010,8 +1236,11 @@ class SciTextProcessor():
     def load_phrases(self, path):
         """
         Code to load phrase file
+         Parameters:
+            path (str, required): Path to phraser.pkl file
         """
-        pass
+        self.phraser_path = './preprocessor_files/phraser.pkl'
+        self.phraser = Phraser.load(self.phraser_path)
 
     def load_normalizer(self, dir):
         """
