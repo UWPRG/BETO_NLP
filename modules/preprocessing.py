@@ -831,20 +831,15 @@ class SciTextProcessor():
                         # identify as phrases. Thus, replacing any space in the lemmatized tokens
                         lemma_tokens = [item.replace(' ', '') for item in lemma_tokens]
                         #sentence_tokens = self.make_phrases(sentence_tokens)
-                        sentence_tokens = self.make_phrases(lemma_tokens, sentence_tokens)
-                        sentence_phrase_idx = [[t, j] for j, t in enumerate(sentence_tokens)
+                        lemma_tokens, sentence_tokens = self.make_phrases(lemma_tokens, sentence_tokens)
+                        sentence_phrase_idx = [[t, j] for j, t in enumerate(lemma_tokens)
                                                if t.count(' ') > 0]
                         if len(sentence_phrase_idx) > 0:
                             for item in sentence_phrase_idx:
                                 item.insert(1, 'phrase')
 
-                        #print(sentence_phrase_idx)
-#                         for item in sentence_phrase_idx:
-#                             item.insert(1, 'phrase')
-#                             print(item)
                         self.phrase_idxs[i].append(sentence_phrase_idx)
-#                         print(sentence_tokens)
-#                         print(lemma_tokens)
+
                     tokens.append(sentence_tokens)
             self.tokenized_texts[i] = tokens
 
@@ -872,8 +867,10 @@ class SciTextProcessor():
             sentence: A list of tokens (strings).
             reps: How many times to combine the words.
         Returns:
-            A list of strings where the strings in the original list are combined
-            to form phrases, separated from each other with an underscore " ".
+            sent: A list of strings where the strings in the original list are combined
+            to form phrases, separated from each other with an space " ".
+            lemma: same as sent, but with lemmatized tokens, required for generating 
+            phrase_idxs
         """
 
         while reps > 0:
@@ -900,7 +897,7 @@ class SciTextProcessor():
             for i, item in enumerate(phrase_identified):
                 sent.insert(item[0], item[1])
 
-        return sent
+        return lemma, sent
 
     def get_phrases_with_words(self, word):
 
