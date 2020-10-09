@@ -687,7 +687,8 @@ class SciTextProcessor():
         pass
 
     def generate_phrases(self, texts='default', depth=2, min_count=10,
-                        threshold=15, save=True, save_dir='preprocessor_files'):
+                        threshold=15, save=True, save_dir='preprocessor_files'
+                        save_fn='phraser.pkl'):
         """
         Generate phrases for the entire corpus and writes them in a file
         Parameters:
@@ -719,9 +720,9 @@ class SciTextProcessor():
         #self.phrases = list_of_phrases
         if save:
             os.makedirs(save_dir, exist_ok=True)
-            phraser.save("./{}/phraser.pkl".format(save_dir))
+            phraser.save("./{}/{}".format(save_dir, save_fn))
             # CODE TO SAVE PHRASES IN PREPROCESSING FILE
-            self.phraser_path = './{}/phraser.pkl'.format(save_dir)
+            self.phraser_path = './{}/{}'.format(save_dir, save_fn)
 
         # deleting the lemmatized file
         os.remove(abstract_file)
@@ -891,11 +892,11 @@ class SciTextProcessor():
                 location = item[0] - pos
                 print(location)
                 num_words = item[1].count(' ')
-                
+
                 for i in range(num_words + 1):
                     sent.pop(location)
                 pos = pos + 1
-            
+
             for i, item in enumerate(phrase_identified):
                 sent.insert(item[0], item[1])
 
