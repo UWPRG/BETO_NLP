@@ -896,7 +896,7 @@ class SciTextProcessor():
                 pos = pos + 1
 
             for i, item in enumerate(phrase_identified):
-                sent.insert(item[0], phrase)
+                sent.insert(item[0], item[1])
 
         return sent
 
