@@ -826,6 +826,9 @@ class SciTextProcessor():
                         wnl = WordNetLemmatizer()
                         #sentence_tokens = [wnl.lemmatize(token) for token in sentence_tokens]
                         lemma_tokens = [wnl.lemmatize(token) for token in sentence_tokens]
+                        # sometimes leammatization adds unwanted spaces, which later would be
+                        # identify as phrases. Thus, replacing any space in the lemmatized tokens
+                        lemma_tokens = [item.replace(' ', '') for item in lemma_tokens]
                         #sentence_tokens = self.make_phrases(sentence_tokens)
                         sentence_tokens = self.make_phrases(lemma_tokens, sentence_tokens)
                         sentence_phrase_idx = [[t, j] for j, t in enumerate(sentence_tokens)
