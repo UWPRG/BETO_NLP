@@ -54,7 +54,7 @@ class SciTextProcessor():
             self.texts = [texts]
         else:
             self.texts = texts
-        
+
         #common terms and excluded terms for phrase generation
         self.COMMON_TERMS = ["-", "-", b"\xe2\x80\x93", b"'s", b"\xe2\x80\x99s", "from", "as", "at", "by", "of", "on",
                              "into", "to", "than", "over", "in", "the", "a", "an", "/", "under", ":"]
@@ -302,25 +302,25 @@ class SciTextProcessor():
 
         clean_abstract = re.sub('<\w*>|<\/\w*>',' ', clean_abstract) #remove the unwanted HTML tags.
         return clean_abstract
-    
-    
+
+
     def lemmatized_abstracts(self, abstract_list, file_name='lemmatized_abstracts.txt'):
         """
-        cleans the abstract through lemmatization so that we can 
+        cleans the abstract through lemmatization so that we can
         use them to generate phrases.
          Parameters:
             abstract_list (str, required): The cleaned abstract
             file_name (str, default = 'lemmatized_abstracts.txt') : name of the file to
             temporary store the lemmatized abstracts
         Returns:
-            writes a file 'lemmatized_abstracts.txt' with all the lemmatized abstracts 
+            writes a file 'lemmatized_abstracts.txt' with all the lemmatized abstracts
             unless a different file_name is given by the user
             return the file_name so it can be deleted after processing
         """
         abstracts_for_phrase = []
         wnl = WordNetLemmatizer()
         print("lemmatizing abstracts and writing file")
-        
+
         with open (file_name, 'w') as f:
             for i in trange(len(abstract_list)):
                 abstract = abstract_list[i]
@@ -330,14 +330,14 @@ class SciTextProcessor():
                 f.write(lemmatized_abstract)
                 f.write('\n')
         return file_name
-                
+
     #Next two functions (wordgrams and exclude_words) are from mat2vec
-    
-    def wordgrams(self, sent, common_terms, excluded_terms, depth, min_count, 
+
+    def wordgrams(self, sent, common_terms, excluded_terms, depth, min_count,
                   threshold, pass_track=0):
         """
-        This function generate a phraser object with phasegrams from the preprocessed 
-        abstracts/full texts 
+        This function generate a phraser object with phasegrams from the preprocessed
+        abstracts/full texts
         Parameters:
             sent (LineSentece object, required): The entire corpus is passed through
                 gensim LineSentence to generate a LineSentence object
@@ -345,16 +345,16 @@ class SciTextProcessor():
                 should be included in the phrases
                 from self.COMMON_TERMS
             excluded_terms (list of strings, required) : a list of common English terms
-                should be excluded from the phrases, phases having these terms will not 
+                should be excluded from the phrases, phases having these terms will not
                 be considered
                 from self.EXCLUDED_TERMS
             depth (int, required) : number of passes throughout the corpus to make phrases
                 depth = 2 will create maximum trigrams as phrases
-            min_count (float, optional) – Ignore all words and bigrams with total 
+            min_count (float, optional) – Ignore all words and bigrams with total
                 collected count lower than this value.
-            threshold (float, optional) – Represent a score threshold for forming 
-                the phrases (higher means fewer phrases). A phrase of words a followed 
-                by b is accepted if the score of the phrase is greater than threshold. 
+            threshold (float, optional) – Represent a score threshold for forming
+                the phrases (higher means fewer phrases). A phrase of words a followed
+                by b is accepted if the score of the phrase is greater than threshold.
                 Heavily depends on concrete scoring-function, see the scoring parameter.
             pass_track (int, required) : keep track of how many passes are made
         Returns:
@@ -376,11 +376,11 @@ class SciTextProcessor():
             grams.phrasegrams = self.exclude_words(grams.phrasegrams, excluded_terms)
             pass_track += 1
             if pass_track < depth:
-                return self.wordgrams(grams[sent], common_terms, excluded_terms, 
+                return self.wordgrams(grams[sent], common_terms, excluded_terms,
                                  depth, min_count, threshold,  pass_track)
             else:
                 return grams
-            
+
     def exclude_words(self, phrasegrams, words):
         """
         Given a list of words, excludes those from the keys of the phrase dictionary.
@@ -388,9 +388,9 @@ class SciTextProcessor():
             Phrasegrams : a phraser.phrasegram object, generated from wordgram function
             word (list of words): words those should be excluded
         Returns:
-            new_phasegrams : a new phrasegram object that excludes phrases containing 
+            new_phasegrams : a new phrasegram object that excludes phrases containing
                 words from the given list
-    
+
         """
         new_phrasergrams = {}
         words_re_list = []
@@ -686,224 +686,46 @@ class SciTextProcessor():
             phrases = self.phrases
         pass
 
-    def generate_phrases(self, depth=2, min_count=10, 
-                        threshold=15, save=True):
+    def generate_phrases(self, texts='default', depth=2, min_count=10,
+                        threshold=15, save=True, save_dir='preprocessor_files'):
         """
         Generate phrases for the entire corpus and writes them in a file
         Parameters:
             depth (int, required) : number of passes throughout the corpus to make phrases
                 depth = 2 will create maximum trigrams as phrases
-            min_count (float, optional) – Ignore all words and bigrams with total 
+            min_count (float, optional) – Ignore all words and bigrams with total
                 collected count lower than this value.
-            threshold (float, optional) – Represent a score threshold for forming 
-                the phrases (higher means fewer phrases). A phrase of words a followed 
-                by b is accepted if the score of the phrase is greater than threshold. 
+            threshold (float, optional) – Represent a score threshold for forming
+                the phrases (higher means fewer phrases). A phrase of words a followed
+                by b is accepted if the score of the phrase is greater than threshold.
                 Heavily depends on concrete scoring-function, see the scoring parameter.
             save (boolean, default=True): write a phrasegram file if True
         Returns:
             grams : a phraser object with phrasegrams
         """
-        abstracts_list = self.clean_texts
-        
-        abstract_file = self.lemmatized_abstracts(self.clean_texts)
-        
+        if texts == 'default':
+            abstracts_list = self.clean_texts
+        else:
+            abstracts_list = texts
+
+        abstract_file = self.lemmatized_abstracts(abstracts_list)
+
         processed_sentences = LineSentence(abstract_file)
         # CODE TO GENERATE LIST OF PHRASES
         phraser = self.wordgrams(processed_sentences,self.COMMON_TERMS,
-                                self.EXCLUDE_TERMS+ self.EXCLUDE_PUNCT, depth=depth, 
-                                 min_count=min_count, threshold=threshold)            
-        
+                                self.EXCLUDE_TERMS+ self.EXCLUDE_PUNCT, depth=depth,
+                                 min_count=min_count, threshold=threshold)
+
         #self.phrases = list_of_phrases
         if save:
-            os.makedirs('preprocessor_files', exist_ok=True)
-            phraser.save("./preprocessor_files/phraser.pkl")
+            os.makedirs(save_dir, exist_ok=True)
+            phraser.save("./{}/phraser.pkl".format(save_dir))
             # CODE TO SAVE PHRASES IN PREPROCESSING FILE
-            self.phraser_path = './preprocessor_files/phraser.pkl'
-            
-        # deleting the lemmatized file    
+            self.phraser_path = './{}/phraser.pkl'.format(save_dir)
+
+        # deleting the lemmatized file
         os.remove(abstract_file)
         print("lemmatized abstract file deleted")
-
-    def normalize(self):
-        self.normalize_chemical_entities()
-        self.normalize_phrases()
-
-
-    # def mp_normalize_chemical_entities(self, texts='default',
-    #                                    remove_abbreviations=True, search_attempts=10,
-    #                                    save=False, chunk_size=100, n_workers='max',
-    #                                    save_dir='preprocessor_files'):
-    #     """
-    #     Parallelizable version of the function to normalize chemical entities.
-    #     Allows the user to speed up pubchem searching by using multiple processes
-    #     to search independently
-    #
-    #     Parameters:
-    #         texts (list, required): List of texts to normalize
-    #         remove_abbreviations (bool): If true then replace abbreviated
-    #                                      entities with full name (only those
-    #                                      extracted by chemdataextractor)
-    #         save (bool): If true then saves texts, search history and run history
-    #                      to preprocessor_files folder. WARNING: Running this function
-    #                      twice without moving saved files will overwrite your previous
-    #                      saves
-    #         search_attempts (int): The number of times a failed search will be repeated
-    #                                before giving up
-    #         chunk_size (int): The size of the chunk sent to an individual processor
-    #         n_workers (int): The number of processes to use. Defaults to the maximum
-    #         save_dir (str): The directory to save preprocess files to
-    #     """
-    #     self.remove_abbrevations = remove_abbreviations
-    #     self.search_attempts = search_attempts
-    #     if texts == 'default':
-    #         texts = self.clean_texts
-    #     if n_workers == 'max':
-    #         n_workers = multiprocessing.cpu_count()
-    #     full_chunk = chunk_size * n_workers
-    #     n_loops = math.ceil(len(texts) / full_chunk)
-    #
-    #     ### Some entity names are ambiguous and must be hard coded
-    #     self.entity_to_cid['CO'] = [281, 'carbon monoxide']
-    #     self.entity_to_cid['Co'] = [104730, 'cobalt']
-    #     self.entity_to_cid['NO'] = [145068, 'nitric oxide']
-    #     self.entity_to_cid['No'] = [24822, 'nobelium']
-    #     self.entity_to_cid['sugar'] = [None, None]
-    #     self.entity_to_cid['chloro'] = [None, None]
-    #     self.entity_to_cid['alcohol'] = [None, None]
-    #     self.entity_to_synonyms['carbon monoxide'] = ['CO']
-    #     self.entity_to_synonyms['cobalt'] = ['Co']
-    #     self.entity_to_synonyms['nitric oxide'] = ['NO']
-    #     self.entity_to_synonyms['nobelium'] = ['No']
-    #     if len(self.entity_counts.keys()) == 0:
-    #         for k, v in self.entity_to_cid.items():
-    #             if v[1] is None:
-    #                 self.entity_counts[k] = 1
-    #             else:
-    #                 self.entity_counts[v[1]] = 1
-    #     start_idx = len(self.normalized_texts)
-    #     for i in range(n_loops):
-    #         pool = Pool(processes=n_workers, initargs=(RLock(),), initializer=tqdm.set_lock)
-    #         text_chunks = []
-    #         for j in range(n_workers):
-    #             start_chunk = i*full_chunk+j*chunk_size
-    #             end_chunk = i*full_chunk+(j+1)*chunk_size
-    #             if end_chunk >= len(texts):
-    #                 end_chunk = len(texts)
-    #             text_chunks.append(texts[start_chunk:end_chunk])
-    #
-    #         jobs = [pool.apply_async(self.norm_ce_loop, args=(text_chunk, i,)) for i, text_chunk in enumerate(text_chunks)]
-    #         pool.close()
-    #
-    #         unsorted_result = [job.get() for job in jobs]
-    #         result = [val[1] for val in sorted(unsorted_result)]
-    #         print(result)
-    #
-    # def norm_ce_loop(self, texts, worker_idx):
-    #     """
-    #     Iterates through texts, extracts chemical entities and normalizes
-    #     them. Abridged version used for multiprocessing
-    #
-    #     Parameters:
-    #         texts (list, required): List of texts to normalize
-    #         worker_idx (int): The idx of the worker
-    #         queue (Queue): Queue object to store returned data
-    #     """
-    #     ### Custom exception for catching server-side pubchem errors
-    #     class TimeoutException(Exception):
-    #         pass
-    #
-    #     def timeout_handler(signum, frame):
-    #         raise TimeoutException
-    #
-    #     signal.signal(signal.SIGALRM, timeout_handler)
-    #
-    #     ### tqdm progress bar
-    #     tqdm_text = '#' + '{}'.format(worker_idx).zfill(3)
-    #
-    #     normalized_texts = []
-    #     entity_to_cid = self.entity_to_cid.copy()
-    #     entity_to_synonyms = self.entity_to_synonyms.copy()
-    #     entity_counts = self.entity_counts.copy()
-    #     entities_per_text = {}
-    #
-    #     with tqdm(total=len(texts), desc=tqdm_text, position=worker_idx+1) as pbar:
-    #         for text in texts:
-    #             ### Remove and normalize abbreviations
-    #             if self.remove_abbreviations:
-    #                 text = self.remove_abbreviations(text)
-    #             else:
-    #                 pass
-    #
-    #             doc = Document(text)
-    #             cems = doc.cems
-    #             entity_list = []
-    #             for cem in cems:
-    #                 ### Check if abbreviated valence state
-    #                 elem_valence = self.VALENCE_REGX.match(cem.text)
-    #                 if elem_valence:
-    #                     elem = elem_valence.group(1)
-    #                     valence = elem_valence.group(2)
-    #                     elem = self.element_dict[elem]
-    #                     cem.text = elem+valence
-    #
-    #                 ### Check if ambiguous formula
-    #                 if self.FORMULA_REGX.match(cem.text):
-    #                     name = cem.text
-    #                 else:
-    #                     name = cem.text.lower()
-    #
-    #                 ### Add entity name, start and stop indices to dictionary
-    #                 entity_list.append((name, cem.start, cem.end))
-    #                 ### Search entity in PubChem if not already done
-    #                 if name not in entity_to_cid.keys():
-    #                     c = self.search_pubchem(name, self.search_attempts, TimeoutException)
-    #                     signal.alarm(0)
-    #                     if len(c) == 0:
-    #                         entity_to_cid[name] = [None, None]
-    #                         entity_counts[name] = 1
-    #                     else:
-    #                         c = c[0]
-    #                         cid = c.cid
-    #                         iupac_name = c.iupac_name
-    #                         if iupac_name is not None:
-    #                             entity_to_cid[name] = [cid, iupac_name]
-    #                             if iupac_name not in entity_to_synonyms.keys():
-    #                                 entity_to_synonyms[iupac_name] = [name]
-    #                             else:
-    #                                 entity_to_synonyms[iupac_name].append(name)
-    #                             if iupac_name in entity_counts.keys():
-    #                                 entity_counts[iupac_name] += 1
-    #                             else:
-    #                                 entity_counts[iupac_name] = 1
-    #                         else:
-    #                             entity_to_cid[name] = [cid, None]
-    #                             entity_counts[name] = 1
-    #                 else:
-    #                     if entity_to_cid[name][1] is None:
-    #                         entity_counts[name] += 1
-    #                     else:
-    #                         entity_counts[self.entity_to_cid[name][1]] += 1
-    #
-    #             ### Sort named entities by location in text and replace with synonym
-    #             entity_list.sort(key=lambda x:x[1])
-    #             index_change = 0
-    #             entities_per_text[i] = []
-    #             for entity in entity_list:
-    #                 name, start, stop = entity
-    #                 if entity_to_cid[name][1] is not None:
-    #                     replacement_name = entity_to_cid[name][1]
-    #                 else:
-    #                     replacement_name = name
-    #                 replacement_delta = len(replacement_name) - (stop - start)
-    #                 text = text[:start+index_change] + replacement_name + text[stop+index_change:]
-    #                 index_change += replacement_delta
-    #                 entities_per_text[i].append((replacement_name, start+index_change-replacement_delta, stop+index_change, name))
-    #
-    #             normalized_texts.append(text)
-    #             pbar.update(1)
-    #
-    #     return worker_idx, [normalized_texts, entity_to_cid, entity_to_synonyms, entity_counts, entities_per_text]
-
 
 
     ########### TOKENIZING FUNCTIONS #############
@@ -914,7 +736,7 @@ class SciTextProcessor():
     """
 
     def tokenize(self, texts='default', entities='default', use_entities=True,
-                 keep_sentences=True, exclude_punct=False, make_phrases=False, 
+                 keep_sentences=True, exclude_punct=False, make_phrases=False,
                  return_tokenize=False, save=False):
         """
         Takes the set of normalized texts and tokenizes them
@@ -1006,12 +828,12 @@ class SciTextProcessor():
                         lemma_tokens = [wnl.lemmatize(token) for token in sentence_tokens]
                         #sentence_tokens = self.make_phrases(sentence_tokens)
                         sentence_tokens = self.make_phrases(lemma_tokens, sentence_tokens)
-                        sentence_phrase_idx = [[t, j] for j, t in enumerate(sentence_tokens) 
+                        sentence_phrase_idx = [[t, j] for j, t in enumerate(sentence_tokens)
                                                if t.count(' ') > 0]
                         if len(sentence_phrase_idx) > 0:
                             for item in sentence_phrase_idx:
-                                item.insert(1, 'phrase') 
-                                                  
+                                item.insert(1, 'phrase')
+
                         #print(sentence_phrase_idx)
 #                         for item in sentence_phrase_idx:
 #                             item.insert(1, 'phrase')
@@ -1036,7 +858,7 @@ class SciTextProcessor():
                                   indent=4, sort_keys=False,
                                   separators=(',', ': '), ensure_ascii=False)
                 f.write(str(out_))
-        
+
         if return_tokenize:
             return self.tokenized_texts
 
@@ -1049,19 +871,19 @@ class SciTextProcessor():
             A list of strings where the strings in the original list are combined
             to form phrases, separated from each other with an underscore " ".
         """
-        
+
         self.phraser_path = './preprocessor_files/phraser.pkl'
         self.phraser = Phraser.load(self.phraser_path)
         while reps > 0:
             lemma = self.phraser[lemma]
             reps -= 1
-            
+
         # The following part of the code takes part of the lemmatization
         # in actual tokenized inputs, we only want lemmatozed phrases, so this code snippet compares
         # lemmatized vs non-lemmatized tokens and return only lemmatized phrases with
         # non-lemmatized other tokens
         phrase_identified = [[j, t] for j, t in enumerate(lemma) if t.count(' ') > 0]
-        
+
         if(len(phrase_identified) > 0):
             pos = 0
             for item in phrase_identified:
@@ -1075,16 +897,15 @@ class SciTextProcessor():
                 sent.insert(item[0], item[1])
 
         return sent
-    
+
     def get_phrases_with_words(self, word):
-        
+
         tokenized_texts = self.tokenize(texts='default', make_phrases=True, return_tokenize=True)
         for key in tokenized_texts:
             for sentence in tokenized_texts[key]:
                 for item in sentence:
                     if word in item and '-' in item :
                         print(item)
-    
 
     def extract_entity_tokens(self, text, entity_spans):
         """
@@ -1239,8 +1060,7 @@ class SciTextProcessor():
          Parameters:
             path (str, required): Path to phraser.pkl file
         """
-        self.phraser_path = './preprocessor_files/phraser.pkl'
-        self.phraser = Phraser.load(self.phraser_path)
+        self.phraser = Phraser.load(path)
 
     def load_normalizer(self, dir):
         """
@@ -1281,3 +1101,5 @@ class SciTextProcessor():
                 self.load_tokenized_texts(path)
             elif fn == 'tokenized_entity_idxs.json':
                 self.load_tokenized_entity_idxs(path)
+            elif fn == 'phraser.pkl':
+                self.load_phrases(path)
