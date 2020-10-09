@@ -872,8 +872,6 @@ class SciTextProcessor():
             to form phrases, separated from each other with an underscore " ".
         """
 
-        self.phraser_path = './preprocessor_files/phraser.pkl'
-        self.phraser = Phraser.load(self.phraser_path)
         while reps > 0:
             lemma = self.phraser[lemma]
             reps -= 1
