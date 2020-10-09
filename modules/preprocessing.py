@@ -889,12 +889,13 @@ class SciTextProcessor():
             pos = 0
             for item in phrase_identified:
                 location = item[0] - pos
-                phrase = item[1].lstrip().rstrip()
-                num_words = phrase.count(' ')
+                print(location)
+                num_words = item[1].count(' ')
+                
                 for i in range(num_words + 1):
                     sent.pop(location)
                 pos = pos + 1
-
+            
             for i, item in enumerate(phrase_identified):
                 sent.insert(item[0], item[1])
 
