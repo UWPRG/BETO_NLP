@@ -126,7 +126,8 @@ class SciTextProcessor():
                             "Wm−1K−1", "Wm−1K−1", "kWh", "Wkg−1", "Jm−3", "m-3", "gl−1", "A−1",
                             "Ks−1", "mgdm−3", "mms−1", "ks", "appm", "ºC", "HV", "kDa", "Da", "kG",
                             "kGy", "MGy", "Gy", "mGy", "Gbps", "μB", "μL", "μF", "nF", "pF", "mF",
-                            "A", "Å", "A˚", "μgL−1"]
+                            "A", "Å", "A˚", "μgL−1", "mg kg", "mg l", "mg kg-1", "mg g-1", "m2 g-1", "mg l-1"
+                            "ng g-1"]
 
         self.NUMBER_REGX = regex.compile(r"^[+-]?\d*\.?\d+\(?\d*\)?+$", regex.DOTALL)
         self.UNIT_REGX = regex.compile(r"^([+-]?\d*\.?\d+\(?\d*\)?+)([\p{script=Latin}|Ω|μ]+.*)", regex.DOTALL)
@@ -687,7 +688,7 @@ class SciTextProcessor():
         pass
 
     def generate_phrases(self, texts='default', depth=2, min_count=10,
-                        threshold=15, save=True, save_dir='preprocessor_files'
+                        threshold=15, save=True, save_dir='preprocessor_files',
                         save_fn='phraser.pkl'):
         """
         Generate phrases for the entire corpus and writes them in a file
@@ -890,7 +891,6 @@ class SciTextProcessor():
             pos = 0
             for item in phrase_identified:
                 location = item[0] - pos
-                print(location)
                 num_words = item[1].count(' ')
 
                 for i in range(num_words + 1):
