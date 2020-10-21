@@ -67,7 +67,9 @@ class SciTextProcessor():
                              "determined", "find", "successfully", "newly", "present",
                              "reported", "report", "new", "characterize", "characterized", "experimental",
                              "result", "results", "showed", "shown", "such", "after",
-                             "but", "this", "that", "via", "is", "was", "and", "using"]
+                             "but", "this", "that", "via", "is", "was", "and", "using", "for", "with",
+                             "without", "not", "between", "about", "so", "together", "take", "taken",
+                             "suggest", "suggested", "indicate", "indicated", "present", "presented", "among"]
 
         ### Element text and regex
         self.ELEMENTS = ["H", "He", "Li", "Be", "B", "C", "N", "O", "F", "Ne", "Na", "Mg", "Al", "Si", "P", "S", "Cl", "Ar", "K",
@@ -93,6 +95,12 @@ class SciTextProcessor():
                               "mendelevium", "nobelium", "lawrencium", "rutherfordium", "dubnium", "seaborgium", "bohrium",
                               "hassium", "meitnerium", "darmstadtium", "roentgenium", "copernicium", "nihonium", "flerovium",
                               "moscovium", "livermorium", "tennessine", "oganesson", "ununennium"]
+        
+        self.SUPERLATIVES = ["very", "highly", "poor", "poorer", "poorly", "good", "better", "best", "fairly",
+                            "significantly", "relatively", "reasonably", "excellent", "superior", "moderate",
+                            "extremely", "may", "closely", "most", "mostly", "more", "mainly", "probably",
+                            "strongly", "previously", "greatly", "readily", "currently", "only", "extremely",
+                            "commonly"]
 
         self.element_dict = {}
         for element, name in zip(self.ELEMENTS, self.ELEMENT_NAMES):
@@ -126,8 +134,8 @@ class SciTextProcessor():
                             "Wm−1K−1", "Wm−1K−1", "kWh", "Wkg−1", "Jm−3", "m-3", "gl−1", "A−1",
                             "Ks−1", "mgdm−3", "mms−1", "ks", "appm", "ºC", "HV", "kDa", "Da", "kG",
                             "kGy", "MGy", "Gy", "mGy", "Gbps", "μB", "μL", "μF", "nF", "pF", "mF",
-                            "A", "Å", "A˚", "μgL−1", "mg kg", "mg l", "mg kg-1", "mg g-1", "m2 g-1", "mg l-1"
-                            "ng g-1"]
+                            "A", "Å", "A˚", "μgL−1", "mg kg", "mg l", "mg kg-1", "mg g-1", "m2 g-1",
+                            "ng g-1", "g l-1", "mg l-1"]
 
         self.NUMBER_REGX = regex.compile(r"^[+-]?\d*\.?\d+\(?\d*\)?+$", regex.DOTALL)
         self.UNIT_REGX = regex.compile(r"^([+-]?\d*\.?\d+\(?\d*\)?+)([\p{script=Latin}|Ω|μ]+.*)", regex.DOTALL)
@@ -173,10 +181,8 @@ class SciTextProcessor():
         """
         Takes an abstract and applies rules-based preprocessing to remove
         unwanted features from the raw Elsevier abstract download
-
         Parameters:
             abstract (str, required): The abstract which you want to clean
-
         Returns:
             cleaned_abstract (str): The cleaned abstract
         """
@@ -263,10 +269,8 @@ class SciTextProcessor():
         This function takes an abstract and removes the copywrite information
         followed by the Elsevier text and publication year and returns a clean
         abstract
-
         Parameters:
             abstract (str, required): The abstract which has unwanted copywrite text
-
         Returns:
             clean_abstract (str): The clean abstract
         """
@@ -335,7 +339,7 @@ class SciTextProcessor():
     #Next two functions (wordgrams and exclude_words) are from mat2vec
 
     def wordgrams(self, sent, common_terms, excluded_terms, depth, min_count,
-                  threshold, pass_track=0):
+                  threshold, exclude_superlatives, pass_track=0):
         """
         This function generate a phraser object with phasegrams from the preprocessed
         abstracts/full texts
@@ -355,6 +359,8 @@ class SciTextProcessor():
                 collected count lower than this value.
             threshold (float, optional) – Represent a score threshold for forming
                 the phrases (higher means fewer phrases). A phrase of words a followed
+            exclude_superlatives (boolean, default=False): remove phrases that contains word from
+                self.SPLIT_UNITS
                 by b is accepted if the score of the phrase is greater than threshold.
                 Heavily depends on concrete scoring-function, see the scoring parameter.
             pass_track (int, required) : keep track of how many passes are made
@@ -375,6 +381,8 @@ class SciTextProcessor():
             #print(phrases)
             grams = Phraser(phrases)
             grams.phrasegrams = self.exclude_words(grams.phrasegrams, excluded_terms)
+            if exclude_superlatives:
+                grams.phrasegrams = self.exclude_words(grams.phrasegrams, self.SUPERLATIVES)
             pass_track += 1
             if pass_track < depth:
                 return self.wordgrams(grams[sent], common_terms, excluded_terms,
@@ -391,7 +399,6 @@ class SciTextProcessor():
         Returns:
             new_phasegrams : a new phrasegram object that excludes phrases containing
                 words from the given list
-
         """
         new_phrasergrams = {}
         words_re_list = []
@@ -422,7 +429,6 @@ class SciTextProcessor():
         """
         Iterates through texts, extracts chemical entities and normalizes
         them
-
         Parameters:
             texts (list, required): List of texts to normalize
             remove_abbreviations (bool): If true then replace abbreviated
@@ -577,7 +583,6 @@ class SciTextProcessor():
         """
         This function searches pubchem api for named entity and catches exceptions
         if the search is taking too long
-
         Parameters:
             name (str, required): name of entity to search in pubchem
             attempts (int, required): number of search attempts to try before exiting
@@ -609,7 +614,6 @@ class SciTextProcessor():
         abbreviations. The first instance of the abbreviation is removed based on
         some heuristic rules (intended to remove its initial definition) and the
         rest are replaced with the full name
-
         Parameters:
             text (str, required): the text from which abbreviations should be removed
         Returns:
@@ -689,7 +693,7 @@ class SciTextProcessor():
 
     def generate_phrases(self, texts='default', depth=2, min_count=10,
                         threshold=15, save=True, save_dir='preprocessor_files',
-                        save_fn='phraser.pkl'):
+                        save_fn='phraser.pkl', exclude_superlatives=False):
         """
         Generate phrases for the entire corpus and writes them in a file
         Parameters:
@@ -702,6 +706,8 @@ class SciTextProcessor():
                 by b is accepted if the score of the phrase is greater than threshold.
                 Heavily depends on concrete scoring-function, see the scoring parameter.
             save (boolean, default=True): write a phrasegram file if True
+            exclude_superlatives (boolean, default=False): remove phrases that contains word from
+                self.SPLIT_UNITS
         Returns:
             grams : a phraser object with phrasegrams
         """
@@ -716,7 +722,8 @@ class SciTextProcessor():
         # CODE TO GENERATE LIST OF PHRASES
         phraser = self.wordgrams(processed_sentences,self.COMMON_TERMS,
                                 self.EXCLUDE_TERMS+ self.EXCLUDE_PUNCT, depth=depth,
-                                 min_count=min_count, threshold=threshold)
+                                min_count=min_count, threshold=threshold,
+                                exclude_superlatives=exclude_superlatives)
 
         #self.phrases = list_of_phrases
         if save:
@@ -742,7 +749,6 @@ class SciTextProcessor():
                  return_tokenize=False, save=False):
         """
         Takes the set of normalized texts and tokenizes them
-
         Parameters:
             texts (list): List of texts to tokenize. If `default` then
                           self.normalized_texts will be used
@@ -837,8 +843,11 @@ class SciTextProcessor():
                                                if t.count(' ') > 0]
                         if len(sentence_phrase_idx) > 0:
                             for item in sentence_phrase_idx:
-                                item.insert(1, 'phrase')
-
+                                if item[0] in self.SPLIT_UNITS:
+                                    item.insert(1, 'unit')
+                                else:
+                                    item.insert(1, 'phrase')
+                        
                         self.phrase_idxs[i].append(sentence_phrase_idx)
 
                     tokens.append(sentence_tokens)
@@ -912,7 +921,6 @@ class SciTextProcessor():
         """
         Takes a string of text and a list of entity idxs and extracts entities
         locations so remaining text can be automatically tokenized by ChemWordTokenizer
-
         Parameters:
             text (str, required): A string of text containing known entities that
                                   are not identifiable through pre-existing packages
@@ -945,7 +953,6 @@ class SciTextProcessor():
         Takes the token_list returned from extract_entity_tokens(), processes
         the non-entity portions and combines all tokens into a single list. It
         also stores the entity names and list idxs in a dictionary
-
         Parameters:
             token_list (list, required): list of texts to be tokenized and already
                                          tokenized entities
@@ -974,7 +981,6 @@ class SciTextProcessor():
         """
         Processes a single token, in case it needs to be split up (this function
         is adapted from https://github.com/materialsintelligence/mat2vec)
-
         Parameters:
             token (str, required): The token to be processed.
         Returns:
@@ -994,7 +1000,6 @@ class SciTextProcessor():
         """
         Loads a series of PubChem searches so those terms will not be searched
         again in subsequent runs
-
         Parameters:
             path (str, required): Path to json file containing search history
                                   dictionaries
@@ -1007,7 +1012,6 @@ class SciTextProcessor():
     def load_preprocess_history(self, path):
         """
         Loads dictionaries of entity names and counts
-
         Parameters:
             path (str, required): Path to json file containing preprocessing history
         """
@@ -1021,7 +1025,6 @@ class SciTextProcessor():
     def load_normalized_texts(self, path):
         """
         Loads a list of normalized texts
-
         Parameters:
             path (str, required): Path to numpy file containing normalized texts
         """
@@ -1033,7 +1036,6 @@ class SciTextProcessor():
     def load_tokenized_texts(self, path):
         """
         Loads a dictionary of tokenized texts
-
         Parameters:
             path (str, required): Path to json file containing tokenized texts
         """
@@ -1046,7 +1048,6 @@ class SciTextProcessor():
         """
         Loads a dictionary containing the index locations of entity tokens in each
         text
-
         Parameters:
             path (str, required): Path to json file containing entity idxs
         """
@@ -1067,7 +1068,6 @@ class SciTextProcessor():
         """
         Loads all manually created preprocessor save files prior to tokenization.
         Files must have the same name as when written by the SciTextProcessor object
-
         Parameters:
             dir (str, required): Path to folder containing save files
         """
@@ -1085,7 +1085,6 @@ class SciTextProcessor():
         """
         Loads all manually created preprocessor save files. Files must have the
         same name as when written by the SciTextProcessor object
-
         Parameters:
             dir (str, required): Path to folder containing save files
         """
