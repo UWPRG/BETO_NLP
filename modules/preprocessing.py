@@ -69,7 +69,8 @@ class SciTextProcessor():
                              "result", "results", "showed", "shown", "such", "after",
                              "but", "this", "that", "via", "is", "was", "and", "using", "for", "with",
                              "without", "not", "between", "about", "so", "together", "take", "taken",
-                             "suggest", "suggested", "indicate", "indicated", "present", "presented", "among"]
+                             "suggest", "suggested", "indicate", "indicated", "present", "presented", "among",
+                             "develop", "developed"]
 
         ### Element text and regex
         self.ELEMENTS = ["H", "He", "Li", "Be", "B", "C", "N", "O", "F", "Ne", "Na", "Mg", "Al", "Si", "P", "S", "Cl", "Ar", "K",
@@ -96,7 +97,8 @@ class SciTextProcessor():
                               "hassium", "meitnerium", "darmstadtium", "roentgenium", "copernicium", "nihonium", "flerovium",
                               "moscovium", "livermorium", "tennessine", "oganesson", "ununennium"]
         
-        self.SUPERLATIVES = ["very", "highly", "poor", "poorer", "poorly", "good", "better", "best", "fairly",
+        self.SUPERLATIVES = ["very", "highly", "high", "high-", "higher", "poor", "poorer", "poorly", 
+                             "good", "better", "best", "fairly",
                             "significantly", "relatively", "reasonably", "excellent", "superior", "moderate",
                             "extremely", "may", "closely", "most", "mostly", "more", "mainly", "probably",
                             "strongly", "previously", "greatly", "readily", "currently", "only", "extremely",
@@ -386,7 +388,7 @@ class SciTextProcessor():
             pass_track += 1
             if pass_track < depth:
                 return self.wordgrams(grams[sent], common_terms, excluded_terms,
-                                 depth, min_count, threshold,  pass_track)
+                                 depth, min_count, threshold, exclude_superlatives, pass_track)
             else:
                 return grams
 
@@ -404,7 +406,7 @@ class SciTextProcessor():
         words_re_list = []
         for word in words:
             we = regex.escape(word)
-            words_re_list.append("^" + we + "$|^" + we + "_|_" + we + "$|_" + we + "_")
+            words_re_list.append("^" + we + "$|^" + we + "_|_" + we + "$|_" + we + "_|" + we + " ")
 
         word_reg = regex.compile(r""+"|".join(words_re_list))
         for gram in tqdm(phrasegrams):
