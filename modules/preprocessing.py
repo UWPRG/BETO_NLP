@@ -406,7 +406,7 @@ class SciTextProcessor():
         words_re_list = []
         for word in words:
             we = regex.escape(word)
-            words_re_list.append("^" + we + "$|^" + we + "_|_" + we + "$|_" + we + "_|" + we + " ")
+            words_re_list.append("^" + we + "$|^" + we + " | " + we + "$| " + we + " ")
 
         word_reg = regex.compile(r""+"|".join(words_re_list))
         for gram in tqdm(phrasegrams):
