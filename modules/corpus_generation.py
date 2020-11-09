@@ -15,6 +15,7 @@ from pybliometrics.scopus import config
 from elsapy.elsclient import ElsClient
 from elsapy.elsdoc import FullDoc, AbsDoc
 import natsort
+import re
 
 class CorpusGenerator():
 
@@ -27,7 +28,7 @@ class CorpusGenerator():
         self.API_list = list(API_key)
         self.cache_path = cache_path
 
-    def make_jlist(self, jlist_url = 'https://www.elsevier.com/__data/promis_misc/sd-content/journals/jnlactivesubject.xls', \
+    def make_jlist(self, jlist_url = 'https://www.elsevier.com/__data/promis_misc/sd-content/journals/jnlactive.xlsx', \
                     journal_strings = ['chemistry','energy','molecular','atomic','chemical','biochem', \
                                        'organic','polymer','chemical engineering','biotech','colloid']):
         """
@@ -40,14 +41,14 @@ class CorpusGenerator():
         """
         active_journals = pd.read_excel(jlist_url)
         # This makes the dataframe column names a smidge more intuitive.
-        active_journals.rename(columns = {'Display Category Full Name':'Full_Category','Full Title':'Journal_Title'}, inplace = True)
+        active_journals.rename(columns = {'Full Title':'Journal_Title'}, inplace = True)
 
-        active_journals.Full_Category = active_journals.Full_Category.str.lower() # lowercase topics for searching
+        # active_journals.Full_Category = active_journals.Full_Category.str.lower() # lowercase topics for searching
         active_journals = active_journals.drop_duplicates(subset = 'Journal_Title') # drop any duplicate journals
         active_journals = shuffle(active_journals, random_state = 42)
 
         # new dataframe full of only journals who's topic description contained the desired keywords
-        active_journals = active_journals[active_journals['Full_Category'].str.contains('|'.join(journal_strings))]
+        # active_journals = active_journals[active_journals['Full_Category'].str.contains('|'.join(journal_strings))]
 
         #Select down to only the title and the individual identification number called ISSN
         journal_frame = active_journals[['Journal_Title','ISSN']]
@@ -85,9 +86,7 @@ class CorpusGenerator():
         year_list(list, required): the list of years which will be searched through
 
         """
-        journal_frame = self.make_jlist(jlist_url = 'https://www.elsevier.com/__data/promis_misc/sd-content/journals/jnlactivesubject.xls', \
-                        journal_strings = ['chemistry','energy','molecular','atomic','chemical','biochem', \
-                                           'organic','polymer','chemical engineering','biotech','colloid'])
+        journal_frame = self.make_jlist()
 
         search_terms = self.build_search_terms(term_list)
         dict1 = {}
@@ -117,7 +116,7 @@ class CorpusGenerator():
 
         fresh_keys = self.API_list
 
-        journal_frame = self.make_jlist(jlist_url = 'https://www.elsevier.com/__data/promis_misc/sd-content/journals/jnlactivesubject.xls', \
+        journal_frame = self.make_jlist(jlist_url = 'https://www.elsevier.com/__data/promis_misc/sd-content/journals/jnlactive.xlsx', \
                         journal_strings = ['chemistry','energy','molecular','atomic','chemical','biochem', \
                                            'organic','polymer','chemical engineering','biotech','colloid'])
 
@@ -143,6 +142,7 @@ class CorpusGenerator():
         # Build the dictionary that can be used to sequentially query elsevier for different journals and years
         query_dict = self.build_query_dict(term_list,issn_list,year_list)
 
+        pii_list = [] #for avoiding duplicate metadata
         # Must write to memory, clear cache, and clear a dictionary upon starting every new journal
         for i in range(len(issn_list)):
             # At the start of every year, clear the standard output screen
@@ -188,16 +188,19 @@ class CorpusGenerator():
                         result_dict = {}
                         result = query_results.results[k]
 
-                        result_dict['pii'] = result.pii
-                        result_dict['doi'] = result.doi
-                        result_dict['title'] = result.title
-                        result_dict['num_authors'] = result.author_count
-                        result_dict['authors'] = result.author_names
-                        result_dict['description'] = result.description
-                        result_dict['citation_count'] = result.citedby_count
-                        result_dict['keywords'] = result.authkeywords
+                        if result.pii not in pii_list:
+                            result_dict['pii'] = result.pii
+                            result_dict['doi'] = result.doi
+                            result_dict['title'] = result.title
+                            result_dict['num_authors'] = result.author_count
+                            result_dict['authors'] = result.author_names
+                            result_dict['description'] = self.clean_abstract_phrases(result.description) #cleaning the abstract before storing it
+                            result_dict['citation_count'] = result.citedby_count
+                            result_dict['keywords'] = result.authkeywords
 
-                        year_dict[k] = result_dict
+                            year_dict[k] = result_dict
+                        else:
+                            pass
 
                     # Store all of the results for this year in the dictionary containing to a certain journal
                     issn_dict[year_list[j]] = year_dict
@@ -323,19 +326,19 @@ class CorpusGenerator():
 
     def get_fulltexts(self, pii_path, fulltext_output_path, pre_partition = True):
         """
-        This method takes a list of directories containing 'meta' corpus information from the 
+        This method takes a list of directories containing 'meta' corpus information from the
         pybliometrics module and adds full-text information to those files.
 
         Parameters:
         ___________
-        directory_list(list, required): A list of directories which this method will enter and add 
+        directory_list(list, required): A list of directories which this method will enter and add
             full-text information to.
 
         output_path(str, required): The folder in which the new full text corpus will be placed.
 
-        api_keys(list, required): A list of valid API keys from Elsevier developer. One key needed 
+        api_keys(list, required): A list of valid API keys from Elsevier developer. One key needed
             per process being started.
-        
+
         pre_partition (bool): A variable denoting whether or not to separate full-texts into
             sections before writing to the save directory or to leave the full-text as a continuous
             string. If True (default), then section headers and keywords are used partition full-texts.
@@ -390,12 +393,12 @@ class CorpusGenerator():
                             info.write(f'no auths in doc,{json_file},{year},{pub}')
 
                         j_dict[year][pub]['authors'] = auths
-                        
+
                         # the real magic
                         if pre_partition == True:
                             partitioned_text = self.partition_fulltext(text)
                             j_dict[year][pub]['fulltext'] = partitioned_text
-                            
+
                         if pre_partition == False:
                             j_dict[year][pub]['fulltext'] = text
 
@@ -411,28 +414,28 @@ class CorpusGenerator():
 
             with open(j_file,'w') as file:
                 json.dump(j_dict,file)
-                
-                
+
+
     def partition_fulltext(self, fulltext):
         """
         This function calls the SciFullTextProcessor() class to separate strings that
         contain the article's full-text into a dictionary where the keys are section
         headers and the values are the text within that article section.
-        
+
         Parameters:
             fulltext (str): An article full-text contained in a single-line string
-            
+
         Returns:
             partitioned_text (dict): If the partition is successful, this dictionary
                 contains keys pertaining to section headers and values pertaining to
                 the text within that section. If the partition is unsuccessful, this
                 dictionary contains a key:value pair with error codes and a key:value
                 pair with the unpartitioned full-text.
-        """        
-                
+        """
+
         #Instantiate fulltext partitioner
-        sfp = ftp.SciFullTextProcessor()
-        
+        sfp = SciFullTextProcessor()
+
         try:
             #attempt to partition fulltext
             partitioned_text, errors = sfp.get_partitioned_full_text(fulltext)
@@ -440,17 +443,38 @@ class CorpusGenerator():
         except:
             #if partition fails, return original fulltext and key:value pair for debugging
             partitioned_text = {'error handling fulltext':errors, 'fulltext':fulltext}
-        
+
         return partitioned_text
 
-                
+    def clean_abstract_phrases(self, abstract):
+        """
+        This function calls the SciFullTextProcessor class and uses the functions
+        remove_abstract_phrases to clean the abstracts which are generated using the get_pii function.
+
+        Parameters:
+            abstract(str): the abstract to be cleaned
+
+        Returns:
+            clean_abstract(str): abstract after removing the unwanted phrases and symbols
+        """
+        sfp = SciFullTextProcessor()
+        try:
+            clean_abstract = sfp.remove_abstract_phrases(abstract)
+        except TypeError:
+            clean_abstract = abstract
+        except UnboundLocalError:
+            clean_abstract = abstract
+
+        return clean_abstract
+
+
 
 class SciFullTextProcessor():
     """
     Class that applies a variety of cleaning and partitioning functions to
     a set of scientific full-texts.
     """
-    
+
     def __init__(self, texts = None):
         """
         Parameters:
@@ -473,20 +497,20 @@ class SciFullTextProcessor():
         self.ACKS = [' Acknowledgements ', ' Acknowledgments ']
 
         self.REFS = [' References', ' Reference', ' Bibliography ']
-        
+
         if texts is None:
             self.texts = []
         elif isinstance(texts, str):
             self.texts = [texts]
         else:
             self.texts = texts
-            
+
     def get_header_text(self, full_text):
         """
         For full-texts returned by the Elsevier, this function extracts the
         portion of the full-text string that contains the list of section
         headers
-        
+
         Parameters:
             full_text (str): Single string containing the full-text article
 
@@ -497,11 +521,11 @@ class SciFullTextProcessor():
                 this narrowed string is also used to determine the structure of the
                 final partitioned article that is returned by this class.
         """
-        
+
         end_header_list = full_text.index('Reference') + len('Reference')
         end_meta = full_text.index('Elsevier') + len('Elsevier')
         narrowed_string = full_text[end_meta:end_header_list]
-        
+
         return narrowed_string
 
 
@@ -531,8 +555,8 @@ class SciFullTextProcessor():
         nums = re.findall(number_pattern, narrowed_string)
         nums.extend(re.findall(nested_1_pattern, narrowed_string))
         nums.extend(re.findall(nested_2_pattern, narrowed_string))
-        nums.extend(re.findall(nested_3_pattern, narrowed_string)) 
-        nums.extend(re.findall(nested_4_pattern, narrowed_string)) 
+        nums.extend(re.findall(nested_3_pattern, narrowed_string))
+        nums.extend(re.findall(nested_4_pattern, narrowed_string))
         nums = list(set(nums))
 
         #treat heading numbers like version numbers for sorting
@@ -734,7 +758,7 @@ class SciFullTextProcessor():
                             finals = last_entry[tmp_ind:].split(' ')
                             header_list.extend(finals)
 
-                    #no second 'e'        
+                    #no second 'e'
                     if 'Acknowledgment' in last_entry:
                         #acks follow section header
                         if 'A' not in last_entry[:6]:
@@ -1035,7 +1059,7 @@ class SciFullTextProcessor():
         This function is called when a full text has section headers that are not
         numbered. Using pre-defined lists of section headers, it looks through the
         meta-data section containing headers to identify.
-        
+
         Parameters:
             full_text (str): Single string containing the full-text article
 
@@ -1054,7 +1078,7 @@ class SciFullTextProcessor():
             else:
                 pass
 
-        if len(potential_headers) > 0:    
+        if len(potential_headers) > 0:
             headers_list.append(potential_headers[0])
         else:
             pass
@@ -1068,10 +1092,10 @@ class SciFullTextProcessor():
             else:
                 pass
 
-        if len(potential_headers) > 0:    
+        if len(potential_headers) > 0:
             headers_list.append(potential_headers[0])
         else:
-            pass    
+            pass
 
     ###############
 
@@ -1082,7 +1106,7 @@ class SciFullTextProcessor():
             else:
                 pass
 
-        if len(potential_headers) > 0:    
+        if len(potential_headers) > 0:
             headers_list.append(potential_headers[0])
         else:
             pass
@@ -1094,9 +1118,9 @@ class SciFullTextProcessor():
             if hd in narrowed_string:
                 potential_headers.append(hd)
             else:
-                pass 
+                pass
 
-        if len(potential_headers) > 0:    
+        if len(potential_headers) > 0:
             headers_list.append(potential_headers[0])
         else:
             pass
@@ -1110,7 +1134,7 @@ class SciFullTextProcessor():
             else:
                 pass
 
-        if len(potential_headers) > 0:    
+        if len(potential_headers) > 0:
             headers_list.append(potential_headers[0])
         else:
             pass
@@ -1122,9 +1146,9 @@ class SciFullTextProcessor():
             if hd in narrowed_string:
                 potential_headers.append(hd)
             else:
-                pass 
+                pass
 
-        if len(potential_headers) > 0:    
+        if len(potential_headers) > 0:
             headers_list.append(potential_headers[0])
         else:
             pass
@@ -1146,7 +1170,7 @@ class SciFullTextProcessor():
             sectioned_text (dict): A dictionary containing the sectioned text. Keys
                 correspond to section headers as defined by `headers_list`. Values
                 correspond to the text within that section of the full-text article
-            
+
         """
 
         sectioned_text = {}
@@ -1178,12 +1202,12 @@ class SciFullTextProcessor():
 
             if '*' in hd:
                 hd = hd.replace('*', '\*')
-                
+
             if ':' in hd:
                 hd = hd.replace(':', '\:')
 
             if i == 0: # meta-data has no substring-matching to do
-                
+
                 inds = [m.start() for m in re.finditer(hd, full_text)]
                 #Abstract can appear in text, but isn't listed w/ headers
                 #Only use first instance
@@ -1195,7 +1219,7 @@ class SciFullTextProcessor():
                     indices[hd] = fig_text[0]
                     no_abstr = True
 
-            else: 
+            else:
                 inds = [m.start() for m in re.finditer(hd, full_text)]
                 #assume final instance of substring match corresponds
                 #to the correct header text instance
@@ -1235,12 +1259,12 @@ class SciFullTextProcessor():
                         start_id = indices[' Abstract ']
                         end_id = indices[list(indices.keys())[i+1]]
                         sectioned_text[hd] = full_text[start_id:end_id]
-                        
+
                     else:
                         start_id = indices[list(indices.keys())[i]]
                         end_id = indices[list(indices.keys())[i+1]]
                         sectioned_text[hd] = full_text[start_id:end_id]
-                        
+
                 else:
                     start_id = indices[list(indices.keys())[i]]
                     end_id = indices[list(indices.keys())[i+1]]
@@ -1258,14 +1282,14 @@ class SciFullTextProcessor():
         Function that compares the length of the unpartitioned text to the length
         of the partitioned full text. This catches instances of bad header extraction
         that can still successfully fulfill all other functions. For example, if
-        header numbers contain a typo (e.g. ' 4 Results and discussion', ' 4 
+        header numbers contain a typo (e.g. ' 4 Results and discussion', ' 4
         Conclusions Acknowledgements References')
 
         Parameters:
             sectioned_text (dict): A dictionary containing the sectioned text. Keys
                 correspond to section headers as defined by `headers_list`. Values
                 correspond to the text within that section of the full-text article
-                
+
             full_text (str): Single string containing the full-text article
 
 
@@ -1274,7 +1298,7 @@ class SciFullTextProcessor():
             length_check (bool): If lengths are equivalent, length_check == True,
                 else == False
         """
-        
+
         restitched_text = ''
         for i, (key, value) in enumerate(sectioned_text.items()):
             if i > 0: #skip section headers value
@@ -1297,7 +1321,7 @@ class SciFullTextProcessor():
             sectioned_text (dict): A dictionary containing the sectioned text. Keys
                 correspond to section headers as defined by `headers_list`. Values
                 correspond to the text within that section of the full-text article
-            
+
         """
         error1 = 0
         error2 = 0
@@ -1307,7 +1331,7 @@ class SciFullTextProcessor():
             try:
                 #narrows string down to meta-info segment containing primarily section headers
                 narrowed_string = self.get_header_text(full_text)
-                
+
                 if len(narrowed_string) > 2500:
                     #no section headers. narrowed string gets full article
                     nums = [-2]
@@ -1319,11 +1343,11 @@ class SciFullTextProcessor():
 
             except:
                 pass
-                
+
             if len(nums) > 1: #if there are numbered section headers
                 headers_list = self.get_numbered_section_headers(full_text)
                 sectioned_text = self.split_full_text(full_text, headers_list)
-                
+
             elif nums == [-2]:
                 headers_list = ['no section headers']
                 sectioned_text = {'section_headers': headers_list, 'full text': full_text}
@@ -1341,31 +1365,31 @@ class SciFullTextProcessor():
     #         sectioned_text = {'article': 'error in extracting headers'}
 
         return sectioned_text, [error1, error2]
-    
-    
+
+
     def partition_full_text_list(self, texts = 'default', success_only = True, show_bad_ids = True):
         """
         Wrapper function that is called to parse a list of texts
-        
+
         Parameters:
             texts (list of str): list of texts to tokenize. if 'default', then
                 self.texts will be used
             success_only (bool): If True, only the successfully parsed texts are
                 returned. Otherwise, all sectioned_full_texts will contain entries
                 for all attempted texts, where values pertain to error messages
-            show_bad_ids (bool): If True, 
-                
+            show_bad_ids (bool): If True,
+
         Returns:
             sectioned_full_texts (dict): dictionary containing the partitioned full-
                 texts. If success_only == False, then failed texts will contain
                 error messages, rather than the partitioned text
-            
+
         """
-        
+
         if texts == 'default':
             texts = self.texts
-            
-        
+
+
         sectioned_full_texts = {}
         error_count = []
         header_trouble_ids = []
@@ -1405,10 +1429,10 @@ class SciFullTextProcessor():
 
         print(f'{empty_articles} full texts were empty')
         print(f'{len(bad_article_ids)} full texts had text partitioning errors')
-        
+
         if show_bad_ids == True:
             print(bad_article_ids)
-        
+
         if success_only == True:
 
             for ind in bad_article_ids:
@@ -1418,3 +1442,421 @@ class SciFullTextProcessor():
                     print(f'key {ind} does not exist')
 
         return sectioned_full_texts
+
+    def remove_abstract_phrases(self, abstract):
+        """
+        This function takes an abstract which is obtained using the CorpusGenerator() class
+        and rewmoves the unwanted phrases and symbols from the abstracts and returns a clean abstract.
+
+        Parameters:
+            abstract(str): the abstract which is to be cleaned
+
+        Returns:
+            clean_abstract(str): cleaned abstract after removing the unwanted phrases and symbols
+        """
+        split = abstract.split()
+        if '©' in abstract:
+            if split[0] != '©':
+
+                if '. ©' in abstract:
+
+                    if 'Crown Copyright' in abstract:
+                        if split.index('©') > 10:
+                            idx1 = abstract.split('Crown Copyright')
+                            del idx1[1]
+                            clean_abstract = ''.join(idx1)
+                    else:
+                        idx2 = abstract.split('©')
+                        del idx2[1]
+                        clean_abstract = ''.join(idx2)
+                elif '.©' in abstract:
+                    idx11 = abstract.split('©')
+                    del idx11[1]
+                    clean_abstract = ''.join(idx11)
+                elif 'Crown Copyright ©' in abstract:
+                    try:
+                        if split.index('©') > 10:
+                            idx3 = abstract.split('Crown Copyright ©')
+                            del idx3[1]
+                            clean_abstract = ''.join(idx3)
+                        elif 'Published by Elsevier Ltd. All rights reserved.' in abstract:
+                            clean_abstract = re.sub('Crown Copyright ©.*?\d\d\d\d Published by Elsevier Ltd. All rights reserved.', '', abstract)
+                        elif 'Published by Elsevier Ltd.' in abstract:
+                            clean_abstract = re.sub('Crown Copyright ©.*?\d\d\d\d Published by Elsevier Ltd.', '', abstract)
+                        elif 'Published by Elsevier Inc.' in abstract:
+                            clean_abstract = re.sub('Crown Copyright ©.*?\d\d\d\d Published by Elsevier Inc.', '', abstract)
+                        elif 'Published by Elsevier Inc. All rights reserved' in abstract:
+                            clean_abstract = re.sub('Crown Copyright ©.*?\d\d\d\d Published by Elsevier Inc. All rights reserved.', '', abstract)
+                        elif 'Published by Elsevier B.V.' in abstract:
+                            clean_abstract = re.sub('Crown Copyright ©.*?\d\d\d\d Published by Elsevier B.V.', '', abstract)
+                        elif 'Published by Elsevier B.V. All rights reserved.' in abstract:
+                            clean_abstract = re.sub('Crown Copyright ©.*?\d\d\d\d Published by Elsevier B.V. All rights reserved.', '', abstract)
+                        elif 'The Committee on Space Research (COSPAR)':
+                            clean_abstract = re.sub('Crown Copyright ©.*?\d\d\d\d Published by Elsevier Ltd on behalf of The Committee on Space Research \(COSPAR\).', '', abstract)
+                        elif 'The Society of Powder Technology Japan. Published by Elsevier B.V. All rights reserved.' in abstract:
+                            clean_abstract = re.sub('Crown Copyright ©.*?\d\d\d\d The Society of Powder Technology Japan. Published by Elsevier B.V. All rights reserved.', '', abstract)
+                    except UnboundLocalError:
+                        clean_abstract = abstract
+                    except ValueError:
+                            clean_abstract = abstract
+                elif 'Crown copyright ©' in abstract:
+                    if split.index('©') > 10:
+                        idx3 = abstract.split('Crown copyright ©')
+                        del idx3[1]
+                        clean_abstract = ''.join(idx3)
+                elif '© Crown Copyright' in abstract:
+                    try:
+                        if split.index('©') > 10:
+                            idx4 = abstract.split('© Crown Copyright')
+                            del idx4[1]
+                            clean_abstract = ''.join(idx4)
+                    except ValueError:
+                        clean_abstract = abstract
+                elif 'Crown Copyrights ©' in abstract:
+                    idx5 = abstract.split('Crown Copyrights ©')
+                    del idx5[1]
+                    clean_abstract = ''.join(idx5)
+                elif 'Crown Copyright©' in abstract:
+                    idx66 = abstract.split('Crown Copyright©')
+                    del idx66[1]
+                    clean_abstract = ''.join(idx66)
+                elif 'CrownCopyright ©' in abstract:
+                    idx66 = abstract.split('CrownCopyright ©')
+                    del idx66[1]
+                    clean_abstract = ''.join(idx66)
+                elif 'The Society of Powder Technology Japan' in abstract:
+                    idx12 = abstract.split('©')
+                    del idx12[1]
+                    clean_abstract = ''.join(idx12)
+                elif 'Bristol Myers Squibb Company' in abstract:
+                    idx2 = abstract.split('©')
+                    del idx2[1]
+                    clean_abstract = ''.join(idx2)
+                elif 'Crown ©' in abstract:
+                    idx13 = abstract.split('Crown ©')
+                    del idx13[1]
+                    clean_abstract = ''.join(idx13)
+
+                elif 'Copyright ©' in abstract:
+                        try:
+                            if split.index('Copyright') >= 10:
+                                idx8 = abstract.split('Copyright ©')
+                                del idx8[1]
+                                clean_abstract = ''.join(idx8)
+                        except ValueError:
+                            if split.index('©') >= 10:
+                                idx8 = abstract.split('Copyright ©')
+                                del idx8[1]
+                                clean_abstract = ''.join(idx8)
+                        try:
+                            if split.index('Copyright') < 10:
+                                if 'Published by Elsevier Ltd.' in abstract:
+                                    clean_abstract= re.sub('Copyright ©.*?\d\d\d\d Published by Elsevier Ltd. All rights reserved.', '', abstract)
+                                elif 'Elsevier Ltd.' in abstract:
+                                    clean_abstract= re.sub('Copyright ©.*?\d\d\d\d Elsevier Ltd. All rights reserved.', '', abstract)
+                                elif 'Published by Elsevier Inc.' in abstract:
+                                    clean_abstract= re.sub('Copyright ©.*?\d\d\d\d Published by Elsevier Inc.', '', abstract)
+                                elif 'Published by Elsevier Inc. All rights reserved.' in abstract:
+                                    clean_abstract= re.sub('Copyright ©.*?\d\d\d\d Published by Elsevier Inc. All rights reserved.', '', abstract)
+                                elif 'Published by Elsevier B.V. All rights reserved' in abstract:
+                                    clean_abstract = re.sub('Copyright ©.*?\d\d\d\d Published by Elsevier B.V. All rights reserved.', '', abstract)
+                                elif 'Published by Elsevier B.V.' in abstract:
+                                    clean_abstract = re.sub('Copyright ©.*?\d\d\d\d\. Published by Elsevier B.V.', '', abstract)
+
+                                elif 'Elsevier B.V.' in abstract:
+                                    clean_abstract = re.sub('Copyright ©.*?\d\d\d\d Elsevier B.V. All rights reserved.', '', abstract)
+                                elif 'The Authors' in abstract:
+                                    if 'Published by Elsevier B.V.' in abstract:
+                                        clean_abstract = re.sub('Copyright ©.*?\d\d\d\d The Authors. Published by Elsevier B.V.','', abstract)
+                                    clean_abstract = re.sub('Copyright ©.*?\d\d\d\d The Authors.','', abstract)
+                                elif 'Hydrogen Energy Publications, LLC' in abstract:
+                                    clean_abstract = re.sub('Copyright ©.*?\d\d\d\d Hydrogen Energy Publications, LLC', '', abstract)
+                                elif 'Elsevier Science Ltd' in abstract:
+                                    clean_abstract = re.sub('Copyright ©.*?\d\d\d\d Elsevier Science Ltd', '', abstract)
+                        except UnboundLocalError:
+                            clean_abstract = abstract
+                        except ValueError:
+                            clean_abstract = abstract
+
+                elif 'Copyright (C)' in abstract:
+                    idx8 = abstract.split('Copyright (C)')
+                    del idx8[1]
+                    clean_abstract = ''.join(idx8)
+                elif 'Copyright c' in abstract:
+                    idx9 = abstract.split('Copyright c')
+                    del idx9[1]
+                    clean_abstract = ''.join(idx9)
+                elif '. Copyright' in abstract:
+                    idx10 = abstract.split('Copyright')
+                    del idx10[1]
+                    clean_abstract = ''.join(idx10)
+                elif re.findall('©.*?\d\d\d\d', abstract) is not None:
+                    if 'Elsevier Science. All rights reserved.' in abstract:
+                        clean_abstract = re.sub('©.*?\d\d\d\d Elsevier Science. All rights reserved.', '', abstract)
+                    elif 'The Authors' in abstract:
+                        clean_abstract = re.sub('©.*?\d\d\d\d The Authors', '', abstract)
+                    elif 'Elsevier Ltd. All rights reserved.' in abstract:
+                        clean_abstract = re.sub('©.*?\d\d\d\d Elsevier Ltd. All rights reserved.', '', abstract)
+    #                 elif 'International Society for Infectious Diseases. Published by Elsevier Ltd. All rights reserved.':
+    #                     clean_abstract = re.sub('©.*?\d\d\d\d International Society for Infectious Diseases. Published by Elsevier Ltd. All rights reserved.', '', abstract)
+                    else:
+                        clean_abstract = re.sub('©.*?\d\d\d\d', '', abstract)
+
+
+
+            elif split[0] == '©':
+                if 'Elsevier B.V.' in abstract:
+                    if 'Elsevier B.V. All rights reserved.' in abstract:
+                        clean_abstract = re.sub('^©.*?Elsevier B\.V\. All rights reserved\.', '', abstract)
+                    elif 'Elsevier B.V.All rights reserved' in abstract:
+                        clean_abstract = re.sub('^©.*?Elsevier B\.V\.All rights reserved\.', '', abstract)
+                    else:
+                        clean_abstract = re.sub('^©.*?Elsevier B\.V\.', '', abstract)
+                elif 'Elsevier B. .V' in abstract:
+                    clean_abstract = re.sub('^©.*?Elsevier B\.\s.V\.\sAll\srights\sreserved\.', '', abstract)
+                elif 'Elsevier B. V.' in abstract:
+                    clean_abstract = re.sub('^©.*?Elsevier B. V. All rights reserved.', '', abstract)
+                elif 'ElsevierB.V.' in abstract:
+                    if 'All rights reserved' in abstract:
+                        clean_abstract = re.sub('^©.*?ElsevierB.V. All rights reserved.', '', abstract)
+                    else:
+                        clean_abstract = re.sub('^©.*?ElsevierB.V. ', '', abstract)
+                elif 'ElsevierB.V.Allrightsreserved' in abstract:
+                    clean_abstract = re.sub('^©.*?ElsevierB.V.Allrightsreserved.', '', abstract)
+                elif 'Elsevier. B.V.' in abstract:
+                    clean_abstract = re.sub('^©.*?Elsevier. B.V.', '', abstract)
+
+                elif 'Elsevier Ltd' in abstract:
+                    if 'Elsevier Ltd. All rights reserved' in abstract:
+                        clean_abstract = re.sub('^©.*?Elsevier Ltd. All rights reserved.', '', abstract)
+                    elif 'Elsevier Ltd All rights reserved' in abstract:
+                        clean_abstract = re.sub('^©.*?Elsevier Ltd All rights reserved.', '', abstract)
+                    else:
+                        clean_abstract = re.sub('^©.*?Elsevier Ltd.', '', abstract)
+                elif 'Crown Copyright and ELSEVIER Ltd' in abstract:
+                    clean_abstract = re.sub('^©.*?Crown Copyright and ELSEVIER Ltd.', '', abstract)
+
+                elif 'The Authors' in abstract:
+                    clean_abstract = re.sub('^©.*?The Authors.', '', abstract)
+                elif 'Elsevier Inc' in abstract:
+                    if 'Elsevier Inc. All rights reserved' in abstract:
+                        clean_abstract = re.sub('^©.*?Elsevier Inc. All rights reserved', '', abstract)
+                    elif 'Elsevier Inc.All rights reserved' in abstract:
+                        clean_abstract = re.sub('^©.*?Elsevier Inc.All rights reserved', '', abstract)
+                    elif 'Elsevier Inc.. All rights reserved' in abstract:
+                        clean_abstract = re.sub('^©.*?Elsevier Inc.. All rights reserved', '', abstract)
+                    else:
+                        clean_abstract = re.sub('^©.*?Elsevier Inc.', '', abstract)
+                elif 'Elsevier Science Ltd' in abstract:
+                    if 'Elsevier Science Ltd. All rights reserved' in abstract:
+                        clean_abstract = re.sub('^©.*?Elsevier Science Ltd. All rights reserved', '', abstract)
+                    else:
+                        clean_abstract = re.sub('^©.*?Elsevier Science Ltd.', '', abstract)
+                elif 'Elsevier Science S.A' in abstract:
+                    if 'All rights reserved' in abstract:
+                        clean_abstract = re.sub('^©.*?Elsevier Science S.A. All rights reserved', '', abstract)
+                    else:
+                        clean_abstract = re.sub('^©.*?Elsevier Science S.A.', '', abstract)
+                elif 'Elsevier Masson' in abstract:
+                    if 'Elsevier Masson SAS. All rights reserved' in abstract:
+                        clean_abstract = re.sub('^©.*?Elsevier Masson SAS. All rights reserved', '', abstract)
+                    elif 'Elsevier Masson SAS.All rights reserved' in abstract:
+                        clean_abstract = re.sub('^©.*?Elsevier Masson SAS.All rights reserved', '', abstract)
+                    elif 'Elsevier Masson SAS All rights reserved' in abstract:
+                        clean_abstract = re.sub('^©.*?Elsevier Masson SAS All rights reserved', '', abstract)
+                    else:
+                        clean_abstract = re.sub('^©.*?Elsevier Masson SAS.', '', abstract)
+                elif 'Elsevier Ireland Ltd' in abstract:
+                    if 'Elsevier Ireland Ltd. All rights reserved' in abstract:
+                        clean_abstract = re.sub('^©.*?Elsevier Ireland Ltd. All rights reserved', '', abstract)
+                    elif 'Elsevier Ireland Ltd.All rights reserved' in abstract:
+                        clean_abstract = re.sub('^©.*?Elsevier Ireland Ltd.All rights reserved', '', abstract)
+                    elif 'Elsevier Ireland Ltd.. All rights reserved' in abstract:
+                        clean_abstract = re.sub('^©.*?Elsevier Ireland Ltd.. All rights reserved', '', abstract)
+                    else:
+                        clean_abstract = re.sub('^©.*?Elsevier Ireland Ltd.', '', abstract)
+
+                elif 'The Author' in abstract:
+                    if 'Published by Elsevier Inc.' in abstract:
+                        clean_abstract = re.sub('^©.*?The Authors. Published by Elsevier Inc.', '', abstract)
+                    else:
+                        clean_abstract = re.sub('^©.*?The Author.', '', abstract)
+                elif 'The Author(s)' in abstract:
+                    clean_abstract = re.sub('^©.*?The Author\(s\)', '', abstract)
+                elif 'Institut Pasteur' in abstract:
+                    if 'Elsevier Masson SAS' in abstract:
+                        split2 = abstract.split('Elsevier Masson SAS')
+                        del split2[0]
+                        clean_abstract = ''.join(split2)
+                    else:
+                        clean_abstract = re.sub('^©.*?Institut Pasteur.', '', abstract)
+
+                elif 'Société française de radiothérapie oncologique (SFRO)' in abstract:
+                    clean_abstract = re.sub('^©.*?Société française de radiothérapie oncologique \(SFRO\).', '', abstract)
+                elif 'Société française de radiothérapieoncologique (SFRO)' in abstract:
+                    clean_abstract = re.sub('^©.*?Société française de radiothérapieoncologique \(SFRO\).', '', abstract)
+
+                elif 'American Society of Gene  &  Cell Therapy' in abstract:
+                    if 'All rights reserved' in abstract:
+                        if 'American Society of Gene  &  Cell Therapy. All rights reserved' in abstract:
+                            clean_abstract = re.sub('^©.*?American Society of Gene  &  Cell Therapy. All rights reserved.', '', abstract)
+                        elif 'American Society of Gene  &  Cell Therapy All rights reserved' in abstract:
+                            clean_abstract = re.sub('^©.*?American Society of Gene  &  Cell Therapy All rights reserved', '', abstract)
+                    else:
+                        clean_abstract = re.sub('^©.*?American Society of Gene  &  Cell Therapy', '', abstract)
+                elif 'American Society of Gene and Cell Therapy' in abstract:
+                    if 'All rights reserved' in abstract:
+                        clean_abstract = re.sub('^©.*?American Society of Gene and Cell Therapy. All rights reserved.', '', abstract)
+                    else:
+                        clean_abstract = re.sub('^©.*?American Society of Gene and Cell Therapy.', '', abstract)
+                elif 'EW MATERIALS' in abstract:
+                    if 'EW MATERIALS.All rights reserved.' in abstract:
+                        clean_abstract = re.sub('^©.*?EW MATERIALS.All rights reserved.', '', abstract)
+                    else:
+                        clean_abstract = re.sub('^©.*?EW MATERIALS. All rights reserved.', '', abstract)
+                elif 'EW Materials' in abstract:
+                    if 'All rights reserved' in abstract:
+                        clean_abstract = re.sub('^©.*?EW Materials. All rights reserved.', '', abstract)
+                    else:
+                        clean_abstract = re.sub('^©.*?EW Materials', '', abstract)
+                elif 'Hydrogen Energy Publications, LLC' in abstract:
+                    if 'All rights reserved.' in abstract:
+                        if 'Hydrogen Energy Publications, LLC.All rights reserved.' in abstract:
+                            clean_abstract = re.sub('^©.*?Hydrogen Energy Publications, LLC.All rights reserved.', '', abstract)
+                        else:
+                            clean_abstract = re.sub('^©.*?Hydrogen Energy Publications, LLC. All rights reserved.', '', abstract)
+                    else:
+                        clean_abstract = re.sub('^©.*?Hydrogen Energy Publications, LLC.', '', abstract)
+                elif 'Hydrogen Energy Publications LLC' in abstract:
+                    clean_abstract = re.sub('^©.*?Hydrogen Energy Publications LLC.', '', abstract)
+                elif 'Académie des sciences' in abstract:
+                    if 'All rights reserved.' in abstract:
+                        if 'Published by Elsevier Masson SAS' in abstract:
+                            clean_abstract = re.sub('^©.*?Académie des sciences. Published by Elsevier Masson SAS. All rights reserved', '', abstract)
+                        else:
+                            clean_abstract = re.sub('^©.*?Académie des sciences. All rights reserved.', '', abstract)
+                    else:
+                        clean_abstract = re.sub('^©.*?Académie des sciences.', '', abstract)
+                elif 'Acade\'mie des sciences' in abstract:
+                    clean_abstract = re.sub('^©.*?Acade\'mie des sciences. Published by Elsevier Masson SAS. All rights reserved', '', abstract)
+                elif 'Medknow Publications Pvt Ltd' in abstract:
+                    if 'All rights reserved' in abstract:
+                        clean_abstract = re.sub('^©.*?Medknow Publications Pvt Ltd. All rights reserved.', '', abstract)
+                    elif 'Published by Wolters Kluwer' in abstract:
+                        clean_abstract = re.sub('^©.*?Biomedical Journal \| Published by Wolters Kluwer - Medknow.', '', abstract)
+                    else:
+                        clean_abstract = re.sub('^©.*?Medknow Publications Pvt Ltd.', '', abstract)
+                elif 'MEDKNOW' in abstract:
+                    clean_abstract = re.sub('^©.*?MEDKNOW. All rights reserved.', '', abstract)
+
+                elif 'Chang Gung Medical Journal' in abstract:
+                    clean_abstract = re.sub('^©.*?Chang Gung Medical Journal. All rights reserved.', '', abstract)
+                elif 'Institution of Chemical Engineers' in abstract:
+                    if 'Institution of Chemical Engineers. All rights reserved' in abstract:
+                        clean_abstract = re.sub('^©.*?Institution of Chemical Engineers. All rights reserved', '', abstract)
+                    elif 'B.V. All rights reserved' in abstract:
+                        clean_abstract = re.sub('^©.*?Institution of Chemical Engineers B.V. All rights reserved', '', abstract)
+                    else:
+                        clean_abstract = re.sub('^©.*?Institution of Chemical Engineers.', '', abstract)
+                elif 'Institution of Chemical Engineers B.V.' in abstract:
+                    clean_abstract = re.sub('^©.*?Institution of Chemical Engineers B.V. All rights reserved', '', abstract)
+                elif 'International Advanced Research Centre for Powder Metallurgy and New Materials (ARCI)' in abstract:
+                    clean_abstract = re.sub('^©.*?International Advanced Research Centre for Powder Metallurgy and New Materials \(ARCI\). All rights reserved', '', abstract)
+                elif 'Lippincott Williams and Wilkins' in abstract:
+                    clean_abstract = re.sub('^©.*?Lippincott Williams and Wilkins. All rights reserved', '', abstract)
+                elif 'Elsevier Editora Ltda' in abstract:
+                    clean_abstract = re.sub('^©.*?Elsevier Editora Ltda. All rights reserved', '', abstract)
+                elif 'Elsevier BV' in abstract:
+                    if 'Elsevier BV. All rights reserved' in abstract:
+                        clean_abstract = re.sub('^©.*?Elsevier BV. All rights reserved', '', abstract)
+                    elif 'Elsevier BV on behalf of the Chinese Chemical Society' in abstract:
+                        clean_abstract = re.sub('^©.*?Elsevier BV on behalf of the Chinese Chemical Society. All rights reserved.', '', abstract)
+                    else:
+                        clean_abstract = re.sub('^©.*?Elsevier BV.', '', abstract)
+
+                elif 'Korean Nuclear Society' in abstract:
+                    if 'All rights reserved' in abstract:
+                        clean_abstract = re.sub('^©.*?Korean Nuclear Society. All rights reserved', '', abstract)
+                    else:
+                        clean_abstract = re.sub('^©.*?Korean Nuclear Society.', '', abstract)
+                elif 'Elsevier GmbH' in abstract:
+                    if 'Elsevier GmbH. All rights reserved' in abstract:
+                        clean_abstract = re.sub('^©.*?Elsevier GmbH. All rights reserved', '', abstract)
+                    elif 'Elsevier GmbH.All rights reserved' in abstract:
+                        clean_abstract = re.sub('^©.*?Elsevier GmbH.All rights reserved', '', abstract)
+                    elif 'Elsevier GmbH .All rights reserved' in abstract:
+                        clean_abstract = re.sub('^©.*?Elsevier GmbH .All rights reserved', '', abstract)
+                    elif 'Elsevier GmbH All rights reserved' in abstract:
+                        clean_abstract = re.sub('^©.*?Elsevier GmbH All rights reserved.', '', abstract)
+                    elif 'Elsevier Gmb H' in abstract:
+                        clean_abstract = re.sub('^©.*?Elsevier Gmb H. All rights reserved.', '', abstract)
+                    else:
+                        clean_abstract = re.sub('^©.*?Elsevier GmbH.', '', abstract)
+                elif 'Nałęcz Institute' in abstract:
+                    if 'Published by Elsevier Urban  &  Partner Sp. z o.o. All rights reserved' in abstract:
+                        clean_abstract = re.sub('^©.*?Nałęcz Institute of Biocybernetics and Biomedical Engineering.\
+                                        Published by Elsevier Urban  &  Partner Sp. z o.o. All rights reserved.', '', abstract)
+                    elif 'Published by Elsevier Sp. z o.o.' in abstract:
+                        clean_abstract = re.sub('^©.*?Nałęcz Institute of Biocybernetics and Biomedical Engineering of the Polish Academy of Sciences. Published by Elsevier Sp. z o.o. All rights reserved.', '', abstract)
+                    else:
+                        clean_abstract = re.sub('^©.*?Nałęcz Institute of Biocybernetics and Biomedical Engineering', '', abstract)
+                elif 'Elsevier Science B.V' in abstract:
+                    if 'All rights reserved' in abstract:
+                        clean_abstract = re.sub('^©.*?Elsevier Science B.V. All rights reserved.', '', abstract)
+                    else:
+                        clean_abstract = re.sub('^©.*?Elsevier Science B.V.', '', abstract)
+                elif 'Elsevier España' in abstract:
+                    clean_abstract = re.sub('^©.*?Elsevier España, S.L.U.', '', abstract)
+                elif 'Crown Copyright and ELSEVIER Ltd' in abstract:
+                    clean_abstract = re.sub('^©.*?Elsevier. B.V.', '', abstract)
+                elif 'The Combustion Institute' in abstract:
+                    clean_abstract = re.sub('^©.*?The Combustion Institute.', '', abstract)
+                elif 'King Saud University' in abstract:
+                    clean_abstract = re.sub('^©.*?King Saud University', '', abstract)
+                elif 'Chinese Chemical Society and Institute of Materia Medica, Chinese Academy of Medical Sciences' in abstract:
+                    clean_abstract = re.sub('^©.*?Chinese Chemical Society and Institute of Materia Medica, Chinese Academy of Medical Sciences', '', abstract)
+
+
+                elif re.findall('©.*?\d\d\d\d', abstract) is not None:
+                    clean_abstract = re.sub('©.*?\d\d\d\d', '', abstract)
+                elif re.findall('^©.*?\d\d\d\d\.', abstract) is not None:
+                    clean_abstract = re.sub('^©.*?\d\d\d\d\.', '', abstract)
+                elif re.findall('^©.*?\d\d\d\d\s\.', abstract) is not None:
+                    clean_abstract = re.sub('^©.*?\d\d\d\d\s\.', '', abstract)
+
+
+                elif re.findall('©.*?\s\d\d\d\d\sElsevier\sLtd', abstract) is not None:
+                    clean_abstract = re.sub('©.*?\s\d\d\d\d\sElsevier\sLtd\.', '', abstract)
+
+                elif re.findall('©.*?\d\d\d\d\,\sAll\srights\sreserved', abstract) is not None:
+                    clean_abstract = re.sub('©.*?\d\d\d\d\,\sAll\srights\sreserved', '', abstract)
+                elif re.findall('©.*?\d\d\d\d\sPublished\sby\sElsevier\sScience\sB\.V\.', abstract) is not None:
+                    clean_abstract = re.sub('©.*?\d\d\d\d\sPublished\sby\sElsevier\sScience\sB\.V\.', '', abstract)
+                elif re.findall('©.*?\d\d\d\d\sPublished\sby\sElsevier\sInc\.\sAll\srights\sreserved', abstract) is not None:
+                    clean_abstract = re.sub('©.*?\d\d\d\d\sPublished\sby\sElsevier\sInc\.\sAll\srights\sreserved', '', abstract)
+                elif re.findall('©.*?\d\d\d\d\sAcademic\sPress\.', abstract) is not None:
+                    clean_abstract = re.sub('©.*?\d\d\d\d\sAcademic\sPress\.', '', abstract)
+                elif re.findall('©.*?\d\d\d\d\sPublished\sby\sElsevier\sScience\sLtd\.', abstract) is not None:
+                    clean_abstract = re.sub('©.*?\d\d\d\d\sPublished\sby\sElsevier\sScience\sLtd\.', '', abstract)
+                elif re.findall('©.*?Elsevier\sScience\sLtd\.\sAll\srights\sreserved\.', abstract) is not None:
+                    clean_abstract = re.sub('©.*?Elsevier\sScience\sLtd\.\sAll\srights\sreserved\.', '', abstract)
+                elif re.findall('©.*?\d\d\d\d\sPublished\sby\sElsevier\sLtd\.', abstract) is not None:
+                    clean_abstract = re.sub('©.*?\d\d\d\d\sPublished\sby\sElsevier\sLtd\.', '', abstract)
+                elif re.findall('©.*?\d\d\d\d\sPublished\sby\sElsevier\sMasson\sSAS\.', abstract) is not None:
+                    clean_abstract = re.sub('©.*?\d\d\d\d\sPublished\sby\sElsevier\s', '', abstract)
+                elif re.findall('^©.*?', abstract):
+                    clean_abstract = re.sub('^©.*?', '', abstract)
+
+    #             elif re.findall('©.*?\d\d\d\d\s\.', abstract) is not None:
+    #                 clean_abstract = re.sub('©.*?\d\d\d\d\s\.', '', abstract)
+                elif re.findall('©.*?\sAll\srights\sreserved', abstract) is not None:
+                    clean_abstract = re.sub('©.*?\sAll\srights\sreserved', '', abstract)
+                elif 'Elsevier' in abstract:
+                    clean_abstract = re.sub('©.*?\s\d\d\d\d\sElsevier.*', '', abstract)
+                # else:
+                #     clean_abstract = abstract
+
+        else:
+            clean_abstract = abstract
+
+        return clean_abstract
