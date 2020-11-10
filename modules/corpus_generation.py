@@ -1275,6 +1275,34 @@ class SciFullTextProcessor():
                 sectioned_text[hd] = full_text[start_id:]
 
         return sectioned_text
+    
+    
+    def restitch_text(self, sectioned_text):
+        """
+        Function that takes a partitioned text and combines the dictionary values
+        to reform the initial, unpartitioned full-text.
+
+        Parameters:
+            sectioned_text (dict): A dictionary containing the sectioned text. Keys
+                correspond to section headers as defined by `headers_list`. Values
+                correspond to the text within that section of the full-text article
+
+
+        Returns
+        ----------
+            restitched_text (str): Single string containing the full-text article
+        """
+        restitched_text = ''
+        skip_keys = ['Section Headers', 'errors']
+        
+        for i, (key, value) in enumerate(sectioned_text.items()):
+            if key in skip_keys: #skip non-text sections
+                pass
+            
+            else:
+                restitched_text += value
+                
+        return restitched_text
 
 
     def check_partition(self, sectioned_text, full_text):
@@ -1299,10 +1327,7 @@ class SciFullTextProcessor():
                 else == False
         """
 
-        restitched_text = ''
-        for i, (key, value) in enumerate(sectioned_text.items()):
-            if i > 0: #skip section headers value
-                restitched_text += value
+        restitched_text = self.restitch_text(sectioned_text)
 
         length_check = (len(restitched_text) == len(full_text))
 
@@ -1312,7 +1337,8 @@ class SciFullTextProcessor():
         """
         Wrapper function to partition full-text articles by the section headers
         listed in the article's metadata towards the beginning of the string.
-        Calls get_section_headers and split_full_text
+        Calls get_section_headers and split_full_text. Adds new key:value pair
+        to sectioned_text that reports any errors encountered in partitioning
 
         Parameters:
             full_text (str):  Single string containing the full-text article
@@ -1323,51 +1349,60 @@ class SciFullTextProcessor():
                 correspond to the text within that section of the full-text article
 
         """
-        error1 = 0
-        error2 = 0
+        error1 = 0 #empty article
+        error2 = 0 #fails length_check. problem with header extraction or full-text splitting
+        error3 = 0 #no section headers, full-text remains unpartitioned
+        error4 = 0 #non-numbered section headers. Text may not be fully partitioned
+        error5 = 0 #error getting header text. Substrings in self.get_header_text don't match
 
         if full_text != '': #ensure that text string contains article
 
             try:
                 #narrows string down to meta-info segment containing primarily section headers
                 narrowed_string = self.get_header_text(full_text)
-
+                
                 if len(narrowed_string) > 2500:
                     #no section headers. narrowed string gets full article
                     nums = [-2]
+                    error3 = 1
 
                 else:
                     #check for header numbers
                     number_pattern = '\s\d{1,2}\s' #No nesting
                     nums = re.findall(number_pattern, narrowed_string)
 
+                if len(nums) > 1: #if there are numbered section headers
+                    headers_list = self.get_numbered_section_headers(full_text)
+                    sectioned_text = self.split_full_text(full_text, headers_list)
+
+                elif nums == [-2]:
+                    headers_list = ['no section headers']
+                    sectioned_text = {'Section Headers': headers_list, 'full text': full_text}
+
+                else:
+                    header_list = self.get_nonnumbered_section_headers(full_text)
+                    sectioned_text = self.split_full_text(full_text, header_list)
+                    error4 = 1
+                    
+                if self.check_partition(sectioned_text, full_text) == False:
+                    error2 = 1
+                
             except:
-                pass
-
-            if len(nums) > 1: #if there are numbered section headers
-                headers_list = self.get_numbered_section_headers(full_text)
-                sectioned_text = self.split_full_text(full_text, headers_list)
-
-            elif nums == [-2]:
-                headers_list = ['no section headers']
-                sectioned_text = {'section_headers': headers_list, 'full text': full_text}
-
-            else:
-                header_list = self.get_nonnumbered_section_headers(full_text)
-                sectioned_text = self.split_full_text(full_text, header_list)
+                sectioned_text = {'Section Headers':['error locating headers'], 'full text':full_text}
+                error5 = 1
 
         else:
             error1 = 1
-            sectioned_text = {'article' : 'there is no text for this article'}
+            sectioned_text = {'full text' : 'there is no text for this article'}
 
-        if self.check_partition(sectioned_text, full_text) == False:
-            error2 = 1
-    #         sectioned_text = {'article': 'error in extracting headers'}
+        error_codes = [error1, error2, error3, error4, error5]
+        
+        sectioned_text['errors'] = error_codes
+        
+        return sectioned_text
 
-        return sectioned_text, [error1, error2]
 
-
-    def partition_full_text_list(self, texts = 'default', success_only = True, show_bad_ids = True):
+    def partition_full_text_list(self, texts = 'default', success_only = False, show_bad_ids = True):
         """
         Wrapper function that is called to parse a list of texts
 
@@ -1392,50 +1427,71 @@ class SciFullTextProcessor():
 
         sectioned_full_texts = {}
         error_count = []
-        header_trouble_ids = []
-        empty_article_ids = []
-        undf_err_ids = []
+        
 
         for i in tqdm(range(len(texts))):
-            try:
-                sectioned_full_texts[i], errors = self.get_partitioned_full_text(texts[i])
-                error_count.append(errors)
+            sectioned_full_texts[i] = self.get_partitioned_full_text(texts[i])
 
-            except:
-                sectioned_full_texts[i] = 'error'
-                error_count.append([0, 0])
+        empty_articles = 0 #error1
+        bad_lengths = 0 #error2
+        no_headers = 0 #error3
+        unnumbered_headers = 0 #error4
+        bad_substring = 0 #error5
+        
+        e1_ids = []
+        e2_ids = []
+        e3_ids = []
+        e4_ids = []
+        e5_ids = []
+        
+        shady_partitions = []
 
-        empty_articles = 0
-        bad_lengths = 0
-        undefined_error = 0
+        for i in range(len(sectioned_full_texts)):
 
-        for i, (key, value) in enumerate(sectioned_full_texts.items()):
-            if value == 'error':
-                undefined_error +=1
-                undf_err_ids.append(i)
-
-            if error_count[i][0] == 1:
-                empty_articles+=1
-                empty_article_ids.append(i)
-
-            if error_count[i][1] == 1:
-                bad_lengths +=1
-                header_trouble_ids.append(i)
-
-        bad_article_ids = header_trouble_ids
-        bad_article_ids.extend(undf_err_ids)
-        bad_article_ids = list(set(bad_article_ids))
-        bad_article_ids.sort()
+            errors = sectioned_full_texts[i]['errors']
+            article_error = 0
+            
+            if errors[0] == 1:
+                empty_articles += 1
+                e1_ids.append(i)
+                article_error = 1
+                
+            if errors[1] == 1:
+                bad_lengths += 1
+                e2_ids.append(i)
+                article_error = 1
+                
+            if errors[2] == 1:
+                no_headers += 1
+                e3_ids.append(i)
+                article_error = 1
+                
+            if errors[3] == 1:
+                unnumbered_headers += 1
+                e4_ids.append(i)
+                article_error = 1
+                
+            if errors[4] == 1:
+                bad_substring += 1
+                e5_ids.append(i)
+                article_error = 1
+                
+            if article_error == 1:
+                shady_partitions.append(i)
 
         print(f'{empty_articles} full texts were empty')
-        print(f'{len(bad_article_ids)} full texts had text partitioning errors')
+#         print(f'{len(shady_partitions) - empty_articles} full texts had text partitioning errors')
 
         if show_bad_ids == True:
-            print(bad_article_ids)
+            print(f'{empty_articles} with error1: {e1_ids}\n')
+            print(f'{bad_lengths} with error2: {e2_ids}\n')
+#             print(f'{no_headers} with error3: {e3_ids}\n')
+#             print(f'{unnumbered_headers} with error4: {e4_ids}\n')
+            print(f'{bad_substring} with error5: {e5_ids}\n')
 
         if success_only == True:
 
-            for ind in bad_article_ids:
+            for ind in shady_partitions:
                 try:
                     del sectioned_full_texts[ind]
                 except:
