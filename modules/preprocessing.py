@@ -70,7 +70,7 @@ class SciTextProcessor():
                              "but", "this", "that", "via", "is", "was", "and", "using", "for", "with",
                              "without", "not", "between", "about", "so", "together", "take", "taken",
                              "suggest", "suggested", "indicate", "indicated", "present", "presented", "among",
-                             "develop", "developed"]
+                             "develop", "developed", "out"]
 
         ### Element text and regex
         self.ELEMENTS = ["H", "He", "Li", "Be", "B", "C", "N", "O", "F", "Ne", "Na", "Mg", "Al", "Si", "P", "S", "Cl", "Ar", "K",
@@ -96,13 +96,12 @@ class SciTextProcessor():
                               "mendelevium", "nobelium", "lawrencium", "rutherfordium", "dubnium", "seaborgium", "bohrium",
                               "hassium", "meitnerium", "darmstadtium", "roentgenium", "copernicium", "nihonium", "flerovium",
                               "moscovium", "livermorium", "tennessine", "oganesson", "ununennium"]
-        
-        self.SUPERLATIVES = ["very", "highly", "high", "high-", "higher", "poor", "poorer", "poorly", 
-                             "good", "better", "best", "fairly",
-                            "significantly", "relatively", "reasonably", "excellent", "superior", "moderate",
-                            "extremely", "may", "closely", "most", "mostly", "more", "mainly", "probably",
-                            "strongly", "previously", "greatly", "readily", "currently", "only", "extremely",
-                            "commonly"]
+
+        self.SUPERLATIVES = ["very", "highly", "high", "high-", "higher", "poor", "poorer", "poorly",
+                             "good", "better", "best", "fairly", "significantly", "relatively", "reasonably",
+                             "excellent", "superior", "moderate", "extremely", "may", "closely", "most", "mostly",
+                             "more", "mainly", "probably", "strongly", "previously", "greatly", "readily",
+                             "currently", "only", "extremely", "commonly"]
 
         self.element_dict = {}
         for element, name in zip(self.ELEMENTS, self.ELEMENT_NAMES):
@@ -169,12 +168,12 @@ class SciTextProcessor():
 
         self.normalized_texts = []
         self.entity_counts = {}
+        self.phrase_counts = {}
         self.entities_per_text = {}
         self.entity_to_cid = {}
         self.entity_to_synonyms = {}
         self.tokenized_texts = {}
         self.entity_idxs = {}
-        self.phrase_idxs = {}
 
 
     ########## CLEANING FUNCTIONS ###############
@@ -721,6 +720,7 @@ class SciTextProcessor():
         abstract_file = self.lemmatized_abstracts(abstracts_list)
 
         processed_sentences = LineSentence(abstract_file)
+
         # CODE TO GENERATE LIST OF PHRASES
         phraser = self.wordgrams(processed_sentences,self.COMMON_TERMS,
                                 self.EXCLUDE_TERMS+ self.EXCLUDE_PUNCT, depth=depth,
@@ -807,7 +807,6 @@ class SciTextProcessor():
                 ### Split text into sentences
                 tokens = []
                 self.entity_idxs[i] = []
-                self.phrase_idxs[i] = []
                 para = Paragraph(text)
                 prior_split = 0
                 for j, sentence in enumerate(para.sentences):
@@ -824,8 +823,7 @@ class SciTextProcessor():
                     token_list = self.extract_entity_tokens(sentence, sentence_entities)
 
                     ### Tokenize non-entities and combine with entities
-                    sentence_tokens, sentence_entity_idxs = self.process_token_list(token_list)
-                    self.entity_idxs[i].append(sentence_entity_idxs)
+                    sentence_tokens, sentence_cem_idxs = self.process_token_list(token_list)
 
                     ### Mat2Vec Processing
                     sentence_tokens, _ = MTP.process(sentence_tokens,
@@ -841,18 +839,44 @@ class SciTextProcessor():
                         lemma_tokens = [item.replace(' ', '') for item in lemma_tokens]
                         #sentence_tokens = self.make_phrases(sentence_tokens)
                         lemma_tokens, sentence_tokens = self.make_phrases(lemma_tokens, sentence_tokens)
-                        sentence_phrase_idx = [[t, j] for j, t in enumerate(lemma_tokens)
+                        sentence_phrase_idxs = [[t, j] for j, t in enumerate(sentence_tokens)
                                                if t.count(' ') > 0]
-                        if len(sentence_phrase_idx) > 0:
-                            for item in sentence_phrase_idx:
+                        if len(sentence_phrase_idxs) > 0:
+                            for item in sentence_phrase_idxs:
                                 if item[0] in self.SPLIT_UNITS:
                                     item.insert(1, 'unit')
                                 else:
                                     item.insert(1, 'phrase')
-                        
-                        self.phrase_idxs[i].append(sentence_phrase_idx)
+
+                        all_idxs = sentence_cem_idxs + sentence_phrase_idxs
+                        all_idxs = sorted(all_idxs, key=lambda x: x[2])
+                        self.entity_idxs[i].append(all_idxs)
 
                     tokens.append(sentence_tokens)
+
+                cem_tracker = 0
+                phrase_tracker = {}
+                cem_spans = []
+                for k, extract_sentence in enumerate(self.entity_idxs[i]):
+                    for j, extract_entity in enumerate(extract_sentence):
+                        if extract_entity[1] == 'chemical_entity':
+                            span = [entities[i][cem_tracker][1], entities[i][cem_tracker][2]]
+                            self.entity_idxs[i][k][j] = extract_entity + span
+                            cem_tracker += 1
+                        else:
+                            if extract_entity[0] in self.phrase_counts.keys():
+                                self.phrase_counts[extract_entity[0]] += 1
+                            else:
+                                self.phrase_counts[extract_entity[0]] = 1
+                            phrase_iter = [[m.start(), m.end()] for m in re.finditer(extract_entity[0], text)]
+                            if len(phrase_iter) == 1:
+                                self.entity_idxs[i][k][j] = extract_entity + phrase_iter[0]
+                            elif extract_entity[0] in phrase_tracker.keys():
+                                self.entity_idxs[i][k][j] = extract_entity + phrase_iter[phrase_tracker[extract_entity[0]]]
+                                phrase_tracker[extract_entity[0]] += 1
+                            else:
+                                self.entity_idxs[i][k][j] = extract_entity + phrase_iter[0]
+                                phrase_tracker[extract_entity[0]] = 1
             self.tokenized_texts[i] = tokens
 
         if save:
@@ -881,7 +905,7 @@ class SciTextProcessor():
         Returns:
             sent: A list of strings where the strings in the original list are combined
             to form phrases, separated from each other with an space " ".
-            lemma: same as sent, but with lemmatized tokens, required for generating 
+            lemma: same as sent, but with lemmatized tokens, required for generating
             phrase_idxs
         """
 
@@ -895,18 +919,22 @@ class SciTextProcessor():
         # non-lemmatized other tokens
         phrase_identified = [[j, t] for j, t in enumerate(lemma) if t.count(' ') > 0]
 
+        og_words = []
         if(len(phrase_identified) > 0):
             pos = 0
             for item in phrase_identified:
                 location = item[0] - pos
                 num_words = item[1].count(' ')
 
+                og_word = ''
                 for i in range(num_words + 1):
-                    sent.pop(location)
+                    og_word += sent.pop(location) + ' '
+                og_word = og_word[:-1]
                 pos = pos + 1
+                og_words.append(og_word)
 
             for i, item in enumerate(phrase_identified):
-                sent.insert(item[0], item[1])
+                sent.insert(item[0], og_words[i])
 
         return lemma, sent
 
@@ -968,6 +996,7 @@ class SciTextProcessor():
         for j, item in enumerate(token_list):
             if isinstance(item, str):
                 item_tokens = CWT.tokenize(item)
+                item_tokens = self.merge_infix(item_tokens)
                 ### Split numbers from common units
                 split_tokens = []
                 for token in item_tokens:
@@ -976,7 +1005,7 @@ class SciTextProcessor():
             else:
                 tokens += item
                 item_idx = len(tokens) - 1
-                entity_idxs.append([item[0], item_idx])
+                entity_idxs.append([item[0].replace('_', ' '), 'chemical_entity', item_idx])
         return tokens, entity_idxs
 
     def split_token(self, token):
@@ -994,6 +1023,34 @@ class SciTextProcessor():
             return [nr_unit.group(1), nr_unit.group(2)]
         else:
             return [token]
+
+    def merge_infix(self, item_tokens):
+        """
+        Takes a list of tokens and re-combines any hyphenated words
+        Parameters:
+            item_tokens (list, required): The list of tokens to be processed
+        Returns:
+            new_toks (list): The list with any hyphenated words recombined
+        """
+        if '-' in item_tokens:
+            hyphen_toks = []
+            hyphen_locs = []
+            idxs = [i for i, x in enumerate(item_tokens) if x == '-']
+            for i, idx in enumerate(idxs):
+                hyphen_toks.append(''.join([item_tokens[idx-1], item_tokens[idx], item_tokens[idx+1]]))
+                if i == 0:
+                    hyphen_locs.append([0, idx])
+                else:
+                    hyphen_locs.append([idxs[i-1]+2, idx])
+            new_toks = []
+            for i, hyphen_loc in enumerate(hyphen_locs):
+                new_toks += item_tokens[hyphen_loc[0]:hyphen_loc[1]-1]
+                new_toks.append(hyphen_toks[i])
+            new_toks += item_tokens[idxs[-1]+2:]
+            return new_toks
+        else:
+            return item_tokens
+
 
 
     ########### LOADING FUNCTIONS ###############
@@ -1021,6 +1078,7 @@ class SciTextProcessor():
             preprocess_history = json.load(f)
         entities_per_text = preprocess_history['entities_per_text']
         self.entity_counts = preprocess_history['entity_counts']
+        self.entity_counts = {k: v for k, v in sorted(self.entity_counts.items(), key=lambda item: item[1], reverse=True)}
         for k, v in entities_per_text.items():
             self.entities_per_text[int(k)] = v
 
@@ -1057,6 +1115,16 @@ class SciTextProcessor():
             entity_idxs = json.load(f)
         for k, v in entity_idxs.items():
             self.entity_idxs[int(k)] = v
+
+    def load_phrase_counts(self, path):
+        """
+        Loads a dictionary containing the raw counts of all extracted phrases
+        Parameters:
+            path (str, required): Path to json file containing phrase counts
+        """
+        with open(path) as f:
+            phrase_counts = json.load(f)
+        self.phrase_counts = {k: v for k, v in sorted(phrase_counts.items(), key=lambda item: item[1], reverse=True)}
 
     def load_phrases(self, path):
         """
