@@ -452,7 +452,7 @@ class CorpusGenerator():
 
         try:
             #attempt to partition fulltext
-            partitioned_text, errors = sfp.get_partitioned_full_text(fulltext)
+            partitioned_text = sfp.get_partitioned_full_text(fulltext)
 
         except:
             #if partition fails, return original fulltext and key:value pair for debugging
