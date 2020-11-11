@@ -748,7 +748,7 @@ class SciTextProcessor():
 
     def tokenize(self, texts='default', entities='default', use_entities=True,
                  keep_sentences=True, exclude_punct=False, make_phrases=False,
-                 return_tokenize=False, save=False):
+                 return_tokenize=False, save=False, save_dir='preprocessor_files'):
         """
         Takes the set of normalized texts and tokenizes them
         Parameters:
@@ -880,16 +880,22 @@ class SciTextProcessor():
             self.tokenized_texts[i] = tokens
 
         if save:
-            os.makedirs('preprocessor_files', exist_ok=True)
+            os.makedirs(save_dir, exist_ok=True)
 
-            with io.open('preprocessor_files/tokenized_texts.json', 'w', encoding='utf8') as f:
+            with io.open('{}/tokenized_texts.json'.format(save_dir), 'w', encoding='utf8') as f:
                 out_ = json.dumps(self.tokenized_texts,
                                   indent=4, sort_keys=False,
                                   separators=(',', ': '), ensure_ascii=False)
                 f.write(str(out_))
 
-            with io.open('preprocessor_files/tokenized_entity_idxs.json', 'w', encoding='utf8') as f:
+            with io.open('{}/tokenized_entity_idxs.json'.format(save_dir), 'w', encoding='utf8') as f:
                 out_ = json.dumps(self.entity_idxs,
+                                  indent=4, sort_keys=False,
+                                  separators=(',', ': '), ensure_ascii=False)
+                f.write(str(out_))
+
+            with io.open('{}/phrase_counts.json'.format(save_dir), 'w', encoding='utf8') as f:
+                out_ = json.dumps(self.phrase_counts,
                                   indent=4, sort_keys=False,
                                   separators=(',', ': '), ensure_ascii=False)
                 f.write(str(out_))
