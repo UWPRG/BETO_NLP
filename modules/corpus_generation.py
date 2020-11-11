@@ -108,114 +108,126 @@ class CorpusGenerator():
 
         return dict1
 
-    def get_piis(self, term_list, year_list, pii_path, config_path='/Users/nisarg/.scopus/config.ini', keymaster=False):
-        """
-        This should be a standalone method that recieves a list of journals (issns), a keyword search,
-        an output path and a path to clear the cache. It should be mappable to multiple parallel processes.
-        """
+def get_piis(self, term_list, year_list, abstract_path, fulltexts = False , config_path='/Users/nisarg/.scopus/config.ini', keymaster=False):
+    """
+    This should be a standalone method that recieves a list of journals (issns), a keyword search,
+    an output path and a path to clear the cache. It should be mappable to multiple parallel processes.
+    Here the fulltexts is default set to False, but if the user wants to download the fulltexts
+    with the abstracts it can be set to true.
+    """
 
-        fresh_keys = self.API_list
+    fresh_keys = self.API_list
 
-        journal_frame = self.make_jlist(jlist_url = 'https://www.elsevier.com/__data/promis_misc/sd-content/journals/jnlactive.xlsx', \
-                        journal_strings = ['chemistry','energy','molecular','atomic','chemical','biochem', \
-                                           'organic','polymer','chemical engineering','biotech','colloid'])
-
-
-        if pii_path[-1] is not '/':
-            raise Exception('Output file path must end with /')
-
-        if '.scopus/scopus_search' not in self.cache_path:
-            raise Exception('Cache path is not a sub-directory of the scopus_search. Make sure cache path is correct.')
-
-        # Two lists who's values correspond to each other
-        issn_list = journal_frame['ISSN'].values
-        journal_list = journal_frame['Journal_Title'].values
-        # Find and replaces slashes and spaces in names for file storage purposes
-        for j in range(len(journal_list)):
-            if ':' in journal_list[j]:
-                journal_list[j] = journal_list[j].replace(':','')
-            elif '/' in journal_list[j]:
-                journal_list[j] = journal_list[j].replace('/','_')
-            elif ' ' in journal_list[j]:
-                journal_list[j] = journal_list[j].replace(' ','_')
-
-        # Build the dictionary that can be used to sequentially query elsevier for different journals and years
-        query_dict = self.build_query_dict(term_list,issn_list,year_list)
-
-        pii_list = [] #for avoiding duplicate metadata
-        # Must write to memory, clear cache, and clear a dictionary upon starting every new journal
-        for i in range(len(issn_list)):
-            # At the start of every year, clear the standard output screen
-            os.system('cls' if os.name == 'nt' else 'clear')
-            paper_counter = 0
-
-            issn_dict = {}
-            for j in range(len(year_list)):
-                # for every year in every journal, query the keywords
-                print(f'{journal_list[i]} in {year_list[j]}.')
-
-                # Want the sole 'keymaster' process to handle 429 responses by swapping the key.
-                if keymaster:
-                    try:
-                        query_results = ScopusSearch(verbose = True,query = query_dict[issn_list[i]][year_list[j]])
-                    except Scopus429Error:
-                        print('entered scopus 429 error loop... replacing key')
-                        newkey = fresh_keys.pop(0)
-                        config["Authentication"]["APIKey"] = newkey
-                        time.sleep(5)
-                        query_results = ScopusSearch(verbose = True,query = query_dict[issn_list[i]][year_list[j]])
-                        print('key swap worked!!')
-                # If this process isn't the keymaster, try a query.
-                # If it excepts, wait a few seconds for keymaster to replace key and try again.
-                else:
-                    try:
-                        query_results = ScopusSearch(verbose = True,query = query_dict[issn_list[i]][year_list[j]])
-                    except Scopus429Error:
-                        print('Non key master is sleeping for 15... ')
-                        time.sleep(15)
-                        query_results = ScopusSearch(verbose = True,query = query_dict[issn_list[i]][year_list[j]]) # at this point, the scopus 429 error should be fixed...
-                        print('Non key master slept, query has now worked.')
-
-                # store relevant information from the results into a dictionary pertaining to that query
-                year_dict = {}
-                if query_results.results is not None:
-                    # some of the query results might be of type None
+    journal_frame = self.make_jlist(jlist_url = 'https://www.elsevier.com/__data/promis_misc/sd-content/journals/jnlactive.xlsx', \
+                    journal_strings = ['chemistry','energy','molecular','atomic','chemical','biochem', \
+                                       'organic','polymer','chemical engineering','biotech','colloid'])
 
 
-                    for k in range(len(query_results.results)):
-                        paper_counter += 1
+    if abstract_path[-1] is not '/':
+        raise Exception('Output file path must end with /')
 
-                        result_dict = {}
-                        result = query_results.results[k]
+    if '.scopus/scopus_search' not in self.cache_path:
+        raise Exception('Cache path is not a sub-directory of the scopus_search. Make sure cache path is correct.')
 
-                        if result.pii not in pii_list:
-                            result_dict['pii'] = result.pii
-                            result_dict['doi'] = result.doi
-                            result_dict['title'] = result.title
-                            result_dict['num_authors'] = result.author_count
-                            result_dict['authors'] = result.author_names
+    # Two lists who's values correspond to each other
+    issn_list = journal_frame['ISSN'].values
+    journal_list = journal_frame['Journal_Title'].values
+    # Find and replaces slashes and spaces in names for file storage purposes
+    for j in range(len(journal_list)):
+        if ':' in journal_list[j]:
+            journal_list[j] = journal_list[j].replace(':','')
+        elif '/' in journal_list[j]:
+            journal_list[j] = journal_list[j].replace('/','_')
+        elif ' ' in journal_list[j]:
+            journal_list[j] = journal_list[j].replace(' ','_')
+
+    # Build the dictionary that can be used to sequentially query elsevier for different journals and years
+    query_dict = self.build_query_dict(term_list,issn_list,year_list)
+
+    pii_list = [] #for avoiding duplicate metadata
+    # Must write to memory, clear cache, and clear a dictionary upon starting every new journal
+    for i in range(len(issn_list)):
+        # At the start of every year, clear the standard output screen
+        os.system('cls' if os.name == 'nt' else 'clear')
+        paper_counter = 0
+
+        issn_dict = {}
+        for j in range(len(year_list)):
+            # for every year in every journal, query the keywords
+            print(f'{journal_list[i]} in {year_list[j]}.')
+
+            # Want the sole 'keymaster' process to handle 429 responses by swapping the key.
+            if keymaster:
+                try:
+                    query_results = ScopusSearch(verbose = True,query = query_dict[issn_list[i]][year_list[j]])
+                except Scopus429Error:
+                    print('entered scopus 429 error loop... replacing key')
+                    newkey = fresh_keys.pop(0)
+                    config["Authentication"]["APIKey"] = newkey
+                    time.sleep(5)
+                    query_results = ScopusSearch(verbose = True,query = query_dict[issn_list[i]][year_list[j]])
+                    print('key swap worked!!')
+            # If this process isn't the keymaster, try a query.
+            # If it excepts, wait a few seconds for keymaster to replace key and try again.
+            else:
+                try:
+                    query_results = ScopusSearch(verbose = True,query = query_dict[issn_list[i]][year_list[j]])
+                except Scopus429Error:
+                    print('Non key master is sleeping for 15... ')
+                    time.sleep(15)
+                    query_results = ScopusSearch(verbose = True,query = query_dict[issn_list[i]][year_list[j]]) # at this point, the scopus 429 error should be fixed...
+                    print('Non key master slept, query has now worked.')
+
+            # store relevant information from the results into a dictionary pertaining to that query
+            year_dict = {}
+            if query_results.results is not None:
+                # some of the query results might be of type None
+
+
+                for k in range(len(query_results.results)):
+                    paper_counter += 1
+
+                    result_dict = {}
+                    result = query_results.results[k]
+
+                    if result.pii not in pii_list:
+                        result_dict['pii'] = result.pii
+                        result_dict['doi'] = result.doi
+                        result_dict['title'] = result.title
+                        result_dict['num_authors'] = result.author_count
+                        result_dict['authors'] = result.author_names
+                        result_dict['citation_count'] = result.citedby_count
+                        result_dict['keywords'] = result.authkeywords
+
+                        if result.description is not None:
                             result_dict['description'] = self.clean_abstract_phrases(result.description) #cleaning the abstract before storing it
-                            result_dict['citation_count'] = result.citedby_count
-                            result_dict['keywords'] = result.authkeywords
-
-                            year_dict[k] = result_dict
                         else:
-                            pass
+                            result_dict['description'] = 'No abstract`'
 
-                    # Store all of the results for this year in the dictionary containing to a certain journal
-                    issn_dict[year_list[j]] = year_dict
-                else:
-                    # if it was a None type, we will just store the empty dictionary as json
-                    issn_dict[year_list[j]] = year_dict
+                        year_dict[k] = result_dict
+                        pii_list.append(result.pii)
+                    else:
+                        pass
+
+                # Store all of the results for this year in the dictionary containing to a certain journal
+                issn_dict[year_list[j]] = year_dict
+            else:
+                # if it was a None type, we will just store the empty dictionary as json
+                issn_dict[year_list[j]] = year_dict
 
 
-            # Store all of the results for this journal in a folder as json file
-            os.mkdir(f'{pii_path}{journal_list[i]}')
-            with open(f'{pii_path}{journal_list[i]}/{journal_list[i]}.json','w') as file:
-                json.dump(issn_dict, file)
+        # Store all of the results for this journal in a folder as json file
+        os.mkdir(f'{abstract_path}{journal_list[i]}')
+        with open(f'{abstract_path}{journal_list[i]}/{journal_list[i]}.json','w') as file:
+            json.dump(issn_dict, file)
 
-            with open(f'{pii_path}{journal_list[i]}/{journal_list[i]}.txt','w') as file2:
-                file2.write(f'This file contains {paper_counter} publications.')
+        with open(f'{abstract_path}{journal_list[i]}/{journal_list[i]}.txt','w') as file2:
+            file2.write(f'This file contains {paper_counter} publications.')
+
+        if fulltexts == True:
+            self.get_fulltexts(abstract_path, pre_partition = True)
+        if fulltexts == False:
+            pass
 
     def load_journal_json(self, absolute_path):
         """
@@ -230,13 +242,13 @@ class CorpusGenerator():
 
         return data
 
-    def make_dataframe(self, dataframe_path, pii_path):
+    def make_dataframe(self, dataframe_path, abstract_path):
         """
         This function takes the output path where the piis are stored and creates a dataframe for all the pii, doi, abstracts and other stuff
         Parameters:
             dataframe_path(str, required): the path to store the dataframe.
         """
-        directory_list = os.listdir(pii_path)
+        directory_list = os.listdir(abstract_path)
         pub_year = []
         pii = []
         doi = []
@@ -248,7 +260,7 @@ class CorpusGenerator():
 
         for i in trange(len(directory_list)):
             directory = directory_list[i]
-            json_dict = self.load_journal_json(f'{pii_path}/{directory}/{directory}.json')
+            json_dict = self.load_journal_json(f'{abstract_path}/{directory}/{directory}.json')
 
             for year in json_dict:
                 for pub in json_dict[year]:
@@ -324,96 +336,98 @@ class CorpusGenerator():
 
         return text, auths
 
-    def get_fulltexts(self, pii_path, fulltext_output_path, pre_partition = True):
-        """
-        This method takes a list of directories containing 'meta' corpus information from the
-        pybliometrics module and adds full-text information to those files.
+def get_fulltexts(self, abstract_path, pre_partition = True):
+    """
+    This method takes a list of directories containing 'meta' corpus information from the
+    pybliometrics module and adds full-text information to those files.
 
-        Parameters:
-        ___________
-        directory_list(list, required): A list of directories which this method will enter and add
-            full-text information to.
+    Parameters:
+    ___________
+    directory_list(list, required): A list of directories which this method will enter and add
+        full-text information to.
 
-        output_path(str, required): The folder in which the new full text corpus will be placed.
+    abstract_path(str, required): The folder in which the new full text corpus will be placed.
+        It would store the full text corpus under the same directory as it stores the abstracts.
 
-        api_keys(list, required): A list of valid API keys from Elsevier developer. One key needed
-            per process being started.
+    api_keys(list, required): A list of valid API keys from Elsevier developer. One key needed
+        per process being started.
 
-        pre_partition (bool): A variable denoting whether or not to separate full-texts into
-            sections before writing to the save directory or to leave the full-text as a continuous
-            string. If True (default), then section headers and keywords are used partition full-texts.
-            If False, the full-text is left as one continuous string, including its meta-data, as
-            returned by the Elsevier API.
-        """
-        #client = client
-        directory_list = os.listdir(pii_path)
-
-
-        for directory in directory_list:
-            # put a file in the directory that lets us know we've been in that directory
-            os.mkdir(f'{fulltext_output_path}/{directory}')
-            marker = open(f'{fulltext_output_path}/{directory}/marker.txt','w')
-            marker.close()
-
-            # a file to keep track of errors
-            info = open(f'{fulltext_output_path}/{directory}/info.csv','w')
-            info.write('type,file,year,pub') # header
-
-            #print(f'made marker and errors in {directory}')
-
-            # now we have a dictionary of information in our hands. Access it via
-            #journal_dict['year']['pub_number']
-            json_file = f'{pii_path}/{directory}/{directory}.json'
-            j_dict = self.load_journal_json(json_file)
-            rem_list = ['num_authors', 'description', 'citation_count', 'keywords']
-            for year in j_dict:
-
-                if j_dict[year] is not {}:
-                    for pub in j_dict[year]:
-
-                        # the pii identification number used to get the full text
-                        pii = j_dict[year][pub]['pii']
-
-                        try:
-
-                            doc = self.get_doc('pii',pii) # don't know if doc retrieval will fail
-                            print(f'Process {self.API_list} got doc for {directory}, {year}')
-                        except Exception as e:
-                            print(f'EXCEPTION: DOC RETRIEVAL. Process {self.API_list}')
-                            print(f'Exception was {e}')
-                            doc = None
-                            info.write(f'doc retrieval,{json_file},{year},{pub}')
-
-                        text, auths = self.get_docdata(doc) # doesn't crash even if doc = None
+    pre_partition (bool): A variable denoting whether or not to separate full-texts into
+        sections before writing to the save directory or to leave the full-text as a continuous
+        string. If True (default), then section headers and keywords are used partition full-texts.
+        If False, the full-text is left as one continuous string, including its meta-data, as
+        returned by the Elsevier API.
+    """
+    #client = client
+    directory_list = os.listdir(abstract_path)
 
 
-                        if text is 'no text in doc':
-                            info.write(f'no text in doc,{json_file},{year},{pub}')
-                        elif auths is []:
-                            info.write(f'no auths in doc,{json_file},{year},{pub}')
+    for directory in directory_list:
+        # put a file in the directory that lets us know we've been in that directory
+        # os.mkdir(f'{fulltext_output_path}/{directory}')
+        # marker = open(f'{fulltext_output_path}/{directory}/marker.txt','w')
+        # marker.close()
 
-                        j_dict[year][pub]['authors'] = auths
+        # a file to keep track of errors
+        # info = open(f'{fulltext_output_path}/{directory}/info.csv','w')
+        # info.write('type,file,year,pub') # header
 
-                        # the real magic
-                        if pre_partition == True:
-                            partitioned_text = self.partition_fulltext(text)
-                            j_dict[year][pub]['fulltext'] = partitioned_text
+        #print(f'made marker and errors in {directory}')
 
-                        if pre_partition == False:
-                            j_dict[year][pub]['fulltext'] = text
+        # now we have a dictionary of information in our hands. Access it via
+        #journal_dict['year']['pub_number']
+        json_file = f'{abstract_path}/{directory}/{directory}.json'
+        j_dict = self.load_journal_json(json_file)
+        rem_list = ['num_authors', 'description', 'citation_count', 'keywords']
+        for year in j_dict:
 
-                        for key in rem_list:
-                            j_dict[year][pub].pop(key)
+            if j_dict[year] is not {}:
+                for pub in j_dict[year]:
 
-                else:
-                    # the year was empty
-                    info.write(f'year empty,{json_file},{year},{np.nan}')
+                    # the pii identification number used to get the full text
+                    pii = j_dict[year][pub]['pii']
 
-            info.close()
-            j_file = f'{fulltext_output_path}/{directory}/{directory}.json'
+                    try:
 
-            with open(j_file,'w') as file:
-                json.dump(j_dict,file)
+                        doc = self.get_doc('pii',pii) # don't know if doc retrieval will fail
+                        print(f'Process {self.API_list} got doc for {directory}, {year}')
+                    except Exception as e:
+                        print(f'EXCEPTION: DOC RETRIEVAL. Process {self.API_list}')
+                        print(f'Exception was {e}')
+                        doc = None
+                        info.write(f'doc retrieval,{json_file},{year},{pub}')
+
+                    text, auths = self.get_docdata(doc) # doesn't crash even if doc = None
+
+
+                    if text is 'no text in doc':
+                        info.write(f'no text in doc,{json_file},{year},{pub}')
+                    elif auths is []:
+                        info.write(f'no auths in doc,{json_file},{year},{pub}')
+
+                    j_dict[year][pub]['authors'] = auths
+
+                    # the real magic
+                    if pre_partition == True:
+                        partitioned_text = self.partition_fulltext(text)
+                        j_dict[year][pub]['fulltext'] = partitioned_text
+
+                    if pre_partition == False:
+                        j_dict[year][pub]['fulltext'] = text
+
+                    for key in rem_list:
+                        j_dict[year][pub].pop(key)
+
+            else:
+                # the year was empty
+                # info.write(f'year empty,{json_file},{year},{np.nan}')
+                pass
+
+        # info.close()
+        j_file = f'{abstract_path}/{directory}/{directory}_fulltext.json'
+
+        with open(j_file,'w') as file:
+            json.dump(j_dict,file)
 
 
     def partition_fulltext(self, fulltext):
@@ -1275,8 +1289,8 @@ class SciFullTextProcessor():
                 sectioned_text[hd] = full_text[start_id:]
 
         return sectioned_text
-    
-    
+
+
     def restitch_text(self, sectioned_text):
         """
         Function that takes a partitioned text and combines the dictionary values
@@ -1294,14 +1308,14 @@ class SciFullTextProcessor():
         """
         restitched_text = ''
         skip_keys = ['Section Headers', 'errors']
-        
+
         for i, (key, value) in enumerate(sectioned_text.items()):
             if key in skip_keys: #skip non-text sections
                 pass
-            
+
             else:
                 restitched_text += value
-                
+
         return restitched_text
 
 
@@ -1360,7 +1374,7 @@ class SciFullTextProcessor():
             try:
                 #narrows string down to meta-info segment containing primarily section headers
                 narrowed_string = self.get_header_text(full_text)
-                
+
                 if len(narrowed_string) > 2500:
                     #no section headers. narrowed string gets full article
                     nums = [-2]
@@ -1383,10 +1397,10 @@ class SciFullTextProcessor():
                     header_list = self.get_nonnumbered_section_headers(full_text)
                     sectioned_text = self.split_full_text(full_text, header_list)
                     error4 = 1
-                    
+
                 if self.check_partition(sectioned_text, full_text) == False:
                     error2 = 1
-                
+
             except:
                 sectioned_text = {'Section Headers':['error locating headers'], 'full text':full_text}
                 error5 = 1
@@ -1396,9 +1410,9 @@ class SciFullTextProcessor():
             sectioned_text = {'full text' : 'there is no text for this article'}
 
         error_codes = [error1, error2, error3, error4, error5]
-        
+
         sectioned_text['errors'] = error_codes
-        
+
         return sectioned_text
 
 
@@ -1427,7 +1441,7 @@ class SciFullTextProcessor():
 
         sectioned_full_texts = {}
         error_count = []
-        
+
 
         for i in tqdm(range(len(texts))):
             sectioned_full_texts[i] = self.get_partitioned_full_text(texts[i])
@@ -1437,45 +1451,45 @@ class SciFullTextProcessor():
         no_headers = 0 #error3
         unnumbered_headers = 0 #error4
         bad_substring = 0 #error5
-        
+
         e1_ids = []
         e2_ids = []
         e3_ids = []
         e4_ids = []
         e5_ids = []
-        
+
         shady_partitions = []
 
         for i in range(len(sectioned_full_texts)):
 
             errors = sectioned_full_texts[i]['errors']
             article_error = 0
-            
+
             if errors[0] == 1:
                 empty_articles += 1
                 e1_ids.append(i)
                 article_error = 1
-                
+
             if errors[1] == 1:
                 bad_lengths += 1
                 e2_ids.append(i)
                 article_error = 1
-                
+
             if errors[2] == 1:
                 no_headers += 1
                 e3_ids.append(i)
                 article_error = 1
-                
+
             if errors[3] == 1:
                 unnumbered_headers += 1
                 e4_ids.append(i)
                 article_error = 1
-                
+
             if errors[4] == 1:
                 bad_substring += 1
                 e5_ids.append(i)
                 article_error = 1
-                
+
             if article_error == 1:
                 shady_partitions.append(i)
 
