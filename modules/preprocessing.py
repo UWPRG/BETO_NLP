@@ -825,11 +825,6 @@ class SciTextProcessor():
                     ### Tokenize non-entities and combine with entities
                     sentence_tokens, sentence_cem_idxs = self.process_token_list(token_list)
 
-                    ### Mat2Vec Processing
-                    sentence_tokens, _ = MTP.process(sentence_tokens,
-                                                     exclude_punct=exclude_punct,
-                                                     normalize_materials=False,
-                                                     split_oxidation=False)
                     if make_phrases:
                         wnl = WordNetLemmatizer()
                         #sentence_tokens = [wnl.lemmatize(token) for token in sentence_tokens]
@@ -852,11 +847,33 @@ class SciTextProcessor():
                         all_idxs = sorted(all_idxs, key=lambda x: x[2])
                         self.entity_idxs[i].append(all_idxs)
 
+                        ### Mat2Vec Processing
+                        sentence_tokens, _ = MTP.process(sentence_tokens,
+                                                         exclude_punct=exclude_punct,
+                                                         normalize_materials=False,
+                                                         split_oxidation=False)
+                    else:
+                        self.entity_idxs[i].append(sentence_cem_idxs)
+
+                        ### Mat2Vec Processing
+                        sentence_tokens, _ = MTP.process(sentence_tokens,
+                                                         exclude_punct=exclude_punct,
+                                                         normalize_materials=False,
+                                                         split_oxidation=False)
+
                     tokens.append(sentence_tokens)
 
                 cem_tracker = 0
                 phrase_tracker = {}
                 cem_spans = []
+                for k, extract_sentence in enumerate(self.entity_idxs[i]):
+                    for j, extract_entity in enumerate(extract_sentence):
+                        if extract_entity[1] != 'chemical_entity':
+                            if extract_entity[0] not in phrase_tracker.keys():
+                                phrase_tracker[extract_entity[0]] = [1, 0]
+                            else:
+                                phrase_tracker[extract_entity[0]][0] += 1
+
                 for k, extract_sentence in enumerate(self.entity_idxs[i]):
                     for j, extract_entity in enumerate(extract_sentence):
                         if extract_entity[1] == 'chemical_entity':
@@ -868,15 +885,20 @@ class SciTextProcessor():
                                 self.phrase_counts[extract_entity[0]] += 1
                             else:
                                 self.phrase_counts[extract_entity[0]] = 1
-                            phrase_iter = [[m.start(), m.end()] for m in re.finditer(extract_entity[0], text)]
-                            if len(phrase_iter) == 1:
+                            try:
+                                phrase_iter = [[m.start(), m.end()] for m in re.finditer(extract_entity[0], text.lower())]
+                            except:
+                                phrase_iter = []
+                            if len(phrase_iter) != phrase_tracker[extract_entity[0]][0]:
+                                self.entity_idxs[i][k][j] = extract_entity + [-1, -1]
+                            elif len(phrase_iter) == 1:
                                 self.entity_idxs[i][k][j] = extract_entity + phrase_iter[0]
                             elif extract_entity[0] in phrase_tracker.keys():
-                                self.entity_idxs[i][k][j] = extract_entity + phrase_iter[phrase_tracker[extract_entity[0]]]
-                                phrase_tracker[extract_entity[0]] += 1
+                                self.entity_idxs[i][k][j] = extract_entity + phrase_iter[phrase_tracker[extract_entity[0]][1]]
+                                phrase_tracker[extract_entity[0]][1] += 1
                             else:
                                 self.entity_idxs[i][k][j] = extract_entity + phrase_iter[0]
-                                phrase_tracker[extract_entity[0]] = 1
+                                phrase_tracker[extract_entity[0]][1] += 1
             self.tokenized_texts[i] = tokens
 
         if save:
@@ -914,7 +936,6 @@ class SciTextProcessor():
             lemma: same as sent, but with lemmatized tokens, required for generating
             phrase_idxs
         """
-
         while reps > 0:
             lemma = self.phraser[lemma]
             reps -= 1
@@ -1042,18 +1063,25 @@ class SciTextProcessor():
             hyphen_toks = []
             hyphen_locs = []
             idxs = [i for i, x in enumerate(item_tokens) if x == '-']
-            for i, idx in enumerate(idxs):
-                hyphen_toks.append(''.join([item_tokens[idx-1], item_tokens[idx], item_tokens[idx+1]]))
-                if i == 0:
-                    hyphen_locs.append([0, idx])
-                else:
-                    hyphen_locs.append([idxs[i-1]+2, idx])
-            new_toks = []
-            for i, hyphen_loc in enumerate(hyphen_locs):
-                new_toks += item_tokens[hyphen_loc[0]:hyphen_loc[1]-1]
-                new_toks.append(hyphen_toks[i])
-            new_toks += item_tokens[idxs[-1]+2:]
-            return new_toks
+
+            try:
+                for i, idx in enumerate(idxs):
+                    if idx == 0:
+                        pass
+                    else:
+                        hyphen_toks.append(''.join([item_tokens[idx-1], item_tokens[idx], item_tokens[idx+1]]))
+                        if i == 0:
+                            hyphen_locs.append([0, idx])
+                        else:
+                            hyphen_locs.append([idxs[i-1]+2, idx])
+                new_toks = []
+                for i, hyphen_loc in enumerate(hyphen_locs):
+                    new_toks += item_tokens[hyphen_loc[0]:hyphen_loc[1]-1]
+                    new_toks.append(hyphen_toks[i])
+                new_toks += item_tokens[idxs[-1]+2:]
+                return new_toks
+            except IndexError:
+                return item_tokens
         else:
             return item_tokens
 
