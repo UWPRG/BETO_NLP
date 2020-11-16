@@ -458,7 +458,8 @@ class CorpusGenerator():
 
         except:
             #if partition fails, return original fulltext and key:value pair for debugging
-            partitioned_text = {'error handling fulltext':errors, 'fulltext':fulltext}
+            partitioned_text = {'error handling fulltext':'error calling partitioner',
+                                'fulltext':fulltext}
 
         return partitioned_text
 
@@ -506,9 +507,9 @@ class SciFullTextProcessor():
 
         self.RandD = [' Results and discussion ', ' Results ', ' Discussion ']
 
-        self.CONCS = [' Conclusions and outlook ', ' Conclusions and future work ', ' Concluding Remarks',
-                 ' Future perspectives ', ' Concluding remarks ', ' Perspectives ',
-                 ' Conclusions ', ' Conlcusion ']
+        self.CONCS = [' Conclusions and outlook ', ' Conclusions and future work ',
+                      ' Concluding Remarks', ' Future perspectives ', ' Concluding remarks ',
+                      ' Perspectives ', ' Conclusions ', ' Conlcusion ']
 
         self.ACKS = [' Acknowledgements ', ' Acknowledgments ']
 
@@ -1496,13 +1497,14 @@ class SciFullTextProcessor():
                 shady_partitions.append(i)
 
         print(f'{empty_articles} full texts were empty')
-#         print(f'{len(shady_partitions) - empty_articles} full texts had text partitioning errors')
+        print(f'{len(shady_partitions) - empty_articles} full texts had text' \
+              ' partitioning warnings or errors')
 
         if show_bad_ids == True:
             print(f'{empty_articles} with error1: {e1_ids}\n')
             print(f'{bad_lengths} with error2: {e2_ids}\n')
-#             print(f'{no_headers} with error3: {e3_ids}\n')
-#             print(f'{unnumbered_headers} with error4: {e4_ids}\n')
+            print(f'{no_headers} with error3: {e3_ids}\n')
+            print(f'{unnumbered_headers} with error4: {e4_ids}\n')
             print(f'{bad_substring} with error5: {e5_ids}\n')
 
         if success_only == True:
