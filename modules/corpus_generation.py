@@ -19,18 +19,18 @@ import re
 
 class CorpusGenerator():
 
-    def __init__(self, API_key, cache_path):
+    def __init__(self, API_key, scopus_path):
         """
         Parameters:
             API_key(str, required): API key generated from Scopus
             cache_path(str, required): path for dumping the cache data
         """
         self.API_list = list(API_key)
-        self.cache_path = cache_path
+        self.scopus_path = scopus_path
+        self.cache_path = os.path.join(scopus_path, 'scopus_search/COMPLETE/')
+        self.config_path = os.path.join(scopus_path, 'config.ini')
 
-    def make_jlist(self, jlist_url = 'https://www.elsevier.com/__data/promis_misc/sd-content/journals/jnlactive.xlsx', \
-                    journal_strings = ['chemistry','energy','molecular','atomic','chemical','biochem', \
-                                       'organic','polymer','chemical engineering','biotech','colloid']):
+    def make_jlist(self, journal_strings, jlist_url='https://www.elsevier.com/__data/promis_misc/sd-content/journals/jnlactive.xlsx'):
         """
         This method creates a dataframe of relevant journals to query. The dataframe contains two columns:
         (1) The names of the Journals
@@ -70,7 +70,7 @@ class CorpusGenerator():
 
         return combined_keywords
 
-    def build_query_dict(self, term_list, issn_list, year_list):
+    def build_query_dict(self, term_list, issn_list, year_list, jlist):
         """
         This method takes the list of journals and creates a nested dictionary
         containing all accessible queries, in each year, for each journal,
@@ -86,7 +86,7 @@ class CorpusGenerator():
         year_list(list, required): the list of years which will be searched through
 
         """
-        journal_frame = self.make_jlist()
+        journal_frame = self.make_jlist(jlist)
 
         search_terms = self.build_search_terms(term_list)
         dict1 = {}
@@ -108,7 +108,7 @@ class CorpusGenerator():
 
         return dict1
 
-    def get_piis(self, term_list, year_list, abstract_path, fulltexts = False , config_path='/Users/nisarg/.scopus/config.ini', keymaster=False):
+    def get_corpus(self, term_list, year_list, save_dir, jlist='default', fulltexts=False, keymaster=False):
         """
         This should be a standalone method that recieves a list of journals (issns), a keyword search,
         an output path and a path to clear the cache. It should be mappable to multiple parallel processes.
@@ -117,13 +117,15 @@ class CorpusGenerator():
         """
 
         fresh_keys = self.API_list
+        if jlist == 'default':
+            jlist = ['chemistry','energy','molecular','atomic','chemical','biochem', \
+                      'organic','polymer','chemical engineering','biotech','colloid']
+        else:
+            pass
+        journal_frame = self.make_jlist(jlist, jlist_url='https://www.elsevier.com/__data/promis_misc/sd-content/journals/jnlactive.xlsx')
 
-        journal_frame = self.make_jlist(jlist_url = 'https://www.elsevier.com/__data/promis_misc/sd-content/journals/jnlactive.xlsx', \
-                        journal_strings = ['chemistry','energy','molecular','atomic','chemical','biochem', \
-                                           'organic','polymer','chemical engineering','biotech','colloid'])
 
-
-        if abstract_path[-1] is not '/':
+        if save_dir[-1] is not '/':
             raise Exception('Output file path must end with /')
 
         if '.scopus/scopus_search' not in self.cache_path:
@@ -142,7 +144,7 @@ class CorpusGenerator():
                 journal_list[j] = journal_list[j].replace(' ','_')
 
         # Build the dictionary that can be used to sequentially query elsevier for different journals and years
-        query_dict = self.build_query_dict(term_list,issn_list,year_list)
+        query_dict = self.build_query_dict(term_list,issn_list,year_list,jlist)
 
         pii_list = [] #for avoiding duplicate metadata
         # Must write to memory, clear cache, and clear a dictionary upon starting every new journal
@@ -217,15 +219,15 @@ class CorpusGenerator():
 
 
             # Store all of the results for this journal in a folder as json file
-            os.mkdir(f'{abstract_path}{journal_list[i]}')
-            with open(f'{abstract_path}{journal_list[i]}/{journal_list[i]}.json','w') as file:
+            os.mkdir(f'{save_dir}{journal_list[i]}')
+            with open(f'{save_dir}{journal_list[i]}/{journal_list[i]}.json','w') as file:
                 json.dump(issn_dict, file)
 
-            with open(f'{abstract_path}{journal_list[i]}/{journal_list[i]}.txt','w') as file2:
+            with open(f'{save_dir}{journal_list[i]}/{journal_list[i]}.txt','w') as file2:
                 file2.write(f'This file contains {paper_counter} publications.')
 
             if fulltexts == True:
-                self.get_fulltexts(abstract_path, pre_partition = True)
+                self.get_fulltexts(save_dir, pre_partition=True)
             if fulltexts == False:
                 pass
 
@@ -242,13 +244,13 @@ class CorpusGenerator():
 
         return data
 
-    def make_dataframe(self, dataframe_path, abstract_path):
+    def make_dataframe(self, dataframe_path, corpus_path):
         """
         This function takes the output path where the piis are stored and creates a dataframe for all the pii, doi, abstracts and other stuff
         Parameters:
             dataframe_path(str, required): the path to store the dataframe.
         """
-        directory_list = os.listdir(abstract_path)
+        directory_list = os.listdir(corpus_path)
         pub_year = []
         pii = []
         doi = []
@@ -260,7 +262,7 @@ class CorpusGenerator():
 
         for i in trange(len(directory_list)):
             directory = directory_list[i]
-            json_dict = self.load_journal_json(f'{abstract_path}/{directory}/{directory}.json')
+            json_dict = self.load_journal_json(f'{corpus_path}/{directory}/{directory}.json')
 
             for year in json_dict:
                 for pub in json_dict[year]:
@@ -336,7 +338,7 @@ class CorpusGenerator():
 
         return text, auths
 
-    def get_fulltexts(self, abstract_path, pre_partition = True):
+    def get_fulltexts(self, save_dir, pre_partition = True):
         """
         This method takes a list of directories containing 'meta' corpus information from the
         pybliometrics module and adds full-text information to those files.
@@ -346,7 +348,7 @@ class CorpusGenerator():
         directory_list(list, required): A list of directories which this method will enter and add
             full-text information to.
 
-        abstract_path(str, required): The folder in which the new full text corpus will be placed.
+        save_dir(str, required): The folder in which the new full text corpus will be placed.
             It would store the full text corpus under the same directory as it stores the abstracts.
 
         api_keys(list, required): A list of valid API keys from Elsevier developer. One key needed
@@ -359,7 +361,7 @@ class CorpusGenerator():
             returned by the Elsevier API.
         """
         #client = client
-        directory_list = os.listdir(abstract_path)
+        directory_list = os.listdir(save_dir)
 
 
         for directory in directory_list:
@@ -376,7 +378,7 @@ class CorpusGenerator():
 
             # now we have a dictionary of information in our hands. Access it via
             #journal_dict['year']['pub_number']
-            json_file = f'{abstract_path}/{directory}/{directory}.json'
+            json_file = f'{save_dir}/{directory}/{directory}.json'
             j_dict = self.load_journal_json(json_file)
             rem_list = ['num_authors', 'description', 'citation_count', 'keywords']
             for year in j_dict:
@@ -424,7 +426,7 @@ class CorpusGenerator():
                     pass
 
             # info.close()
-            j_file = f'{abstract_path}/{directory}/{directory}_fulltext.json'
+            j_file = f'{save_dir}/{directory}/{directory}_fulltext.json'
 
             with open(j_file,'w') as file:
                 json.dump(j_dict,file)
