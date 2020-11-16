@@ -396,7 +396,7 @@ class CorpusGenerator():
 
                                 doc = self.get_doc('pii',pii) # don't know if doc retrieval will fail
                                 print(f'Process {self.API_list} got doc for {directory}, {year}')
-                            except ValueError:
+                            except ValueError: #skips the metadata without pii or doi
                                 print('Got no pii or doi')
                                 doc = None
                             except Exception as e:
