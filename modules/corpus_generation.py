@@ -378,58 +378,64 @@ class CorpusGenerator():
 
             # now we have a dictionary of information in our hands. Access it via
             #journal_dict['year']['pub_number']
-            json_file = f'{save_dir}/{directory}/{directory}.json'
-            j_dict = self.load_journal_json(json_file)
-            rem_list = ['num_authors', 'description', 'citation_count', 'keywords']
-            for year in j_dict:
+            if directory == '.DS_Store':
+                pass
+            else:
+                json_file = f'{save_dir}/{directory}/{directory}.json'
+                j_dict = self.load_journal_json(json_file)
+                rem_list = ['num_authors', 'description', 'citation_count', 'keywords']
+                for year in j_dict:
 
-                if j_dict[year] is not {}:
-                    for pub in j_dict[year]:
+                    if j_dict[year] is not {}:
+                        for pub in j_dict[year]:
 
-                        # the pii identification number used to get the full text
-                        pii = j_dict[year][pub]['pii']
+                            # the pii identification number used to get the full text
+                            pii = j_dict[year][pub]['pii']
 
-                        try:
+                            try:
 
-                            doc = self.get_doc('pii',pii) # don't know if doc retrieval will fail
-                            print(f'Process {self.API_list} got doc for {directory}, {year}')
-                        except Exception as e:
-                            print(f'EXCEPTION: DOC RETRIEVAL. Process {self.API_list}')
-                            print(f'Exception was {e}')
-                            doc = None
-                            info.write(f'doc retrieval,{json_file},{year},{pub}')
+                                doc = self.get_doc('pii',pii) # don't know if doc retrieval will fail
+                                print(f'Process {self.API_list} got doc for {directory}, {year}')
+                            except ValueError:
+                                print('Got no pii or doi')
+                                doc = None
+                            except Exception as e:
+                                print(f'EXCEPTION: DOC RETRIEVAL. Process {self.API_list}')
+                                print(f'Exception was {e}')
+                                doc = None
+                                info.write(f'doc retrieval,{json_file},{year},{pub}')
 
-                        text, auths = self.get_docdata(doc) # doesn't crash even if doc = None
+                            text, auths = self.get_docdata(doc) # doesn't crash even if doc = None
 
 
-                        if text is 'no text in doc':
-                            info.write(f'no text in doc,{json_file},{year},{pub}')
-                        elif auths is []:
-                            info.write(f'no auths in doc,{json_file},{year},{pub}')
+                            if text is 'no text in doc':
+                                info.write(f'no text in doc,{json_file},{year},{pub}')
+                            elif auths is []:
+                                info.write(f'no auths in doc,{json_file},{year},{pub}')
 
-                        j_dict[year][pub]['authors'] = auths
+                            j_dict[year][pub]['authors'] = auths
 
-                        # the real magic
-                        if pre_partition == True:
-                            partitioned_text = self.partition_fulltext(text)
-                            j_dict[year][pub]['fulltext'] = partitioned_text
+                            # the real magic
+                            if pre_partition == True:
+                                partitioned_text = self.partition_fulltext(text)
+                                j_dict[year][pub]['fulltext'] = partitioned_text
 
-                        if pre_partition == False:
-                            j_dict[year][pub]['fulltext'] = text
+                            if pre_partition == False:
+                                j_dict[year][pub]['fulltext'] = text
 
-                        for key in rem_list:
-                            j_dict[year][pub].pop(key)
+                            for key in rem_list:
+                                j_dict[year][pub].pop(key)
 
-                else:
-                    # the year was empty
-                    # info.write(f'year empty,{json_file},{year},{np.nan}')
-                    pass
+                    else:
+                        # the year was empty
+                        # info.write(f'year empty,{json_file},{year},{np.nan}')
+                        pass
 
-            # info.close()
-            j_file = f'{save_dir}/{directory}/{directory}_fulltext.json'
+                # info.close()
+                j_file = f'{save_dir}/{directory}/{directory}_fulltext.json'
 
-            with open(j_file,'w') as file:
-                json.dump(j_dict,file)
+                with open(j_file,'w') as file:
+                    json.dump(j_dict,file)
 
 
     def partition_fulltext(self, fulltext):
