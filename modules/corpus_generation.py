@@ -370,12 +370,6 @@ class CorpusGenerator():
             # marker = open(f'{fulltext_output_path}/{directory}/marker.txt','w')
             # marker.close()
 
-            # a file to keep track of errors
-            # info = open(f'{fulltext_output_path}/{directory}/info.csv','w')
-            # info.write('type,file,year,pub') # header
-
-            #print(f'made marker and errors in {directory}')
-
             # now we have a dictionary of information in our hands. Access it via
             #journal_dict['year']['pub_number']
             if directory == '.DS_Store':
@@ -396,22 +390,12 @@ class CorpusGenerator():
 
                                 doc = self.get_doc('pii',pii) # don't know if doc retrieval will fail
                                 print(f'Process {self.API_list} got doc for {directory}, {year}')
-                            except ValueError: #skips the metadata without pii or doi
-                                print('Got no pii or doi')
-                                doc = None
                             except Exception as e:
                                 print(f'EXCEPTION: DOC RETRIEVAL. Process {self.API_list}')
                                 print(f'Exception was {e}')
                                 doc = None
-                                info.write(f'doc retrieval,{json_file},{year},{pub}')
 
                             text, auths = self.get_docdata(doc) # doesn't crash even if doc = None
-
-
-                            if text is 'no text in doc':
-                                info.write(f'no text in doc,{json_file},{year},{pub}')
-                            elif auths is []:
-                                info.write(f'no auths in doc,{json_file},{year},{pub}')
 
                             j_dict[year][pub]['authors'] = auths
 
@@ -427,11 +411,8 @@ class CorpusGenerator():
                                 j_dict[year][pub].pop(key)
 
                     else:
-                        # the year was empty
-                        # info.write(f'year empty,{json_file},{year},{np.nan}')
                         pass
 
-                # info.close()
                 j_file = f'{save_dir}/{directory}/{directory}_fulltext.json'
 
                 with open(j_file,'w') as file:
