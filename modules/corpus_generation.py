@@ -5,6 +5,7 @@ import pandas as pd
 import numpy as np
 from sklearn.utils import shuffle
 import os
+import shutil
 import multiprocessing
 from os import system, name
 import json
@@ -115,7 +116,7 @@ class CorpusGenerator():
         Here the fulltexts is default set to False, but if the user wants to download the fulltexts
         with the abstracts it can be set to true.
         """
-
+        os.makedirs(save_dir, exist_ok=True)
         fresh_keys = self.API_list
         if jlist == 'default':
             jlist = ['chemistry','energy','molecular','atomic','chemical','biochem', \
@@ -228,8 +229,11 @@ class CorpusGenerator():
 
             if fulltexts == True:
                 self.get_fulltexts(save_dir, pre_partition=True)
-            if fulltexts == False:
+            else:
                 pass
+            if os.path.exists('data') and len(os.listdir('data')) == 0:
+                shutil.rmtree('data')
+
 
     def load_journal_json(self, absolute_path):
         """
@@ -296,8 +300,7 @@ class CorpusGenerator():
             doc= FullDoc(doi = identity)
 
         if doc.read(ElsClient(self.API_list[0])):
-                #print ("doc.title: ", doc.title)
-                doc.write()
+            pass
         else:
             print ("Read document failed.")
 
