@@ -487,6 +487,16 @@ class SciFullTextProcessor():
         Parameters:
             texts (list, required): list of texts to be preprocessed
         """
+        
+        #keyword list to search through for each article
+        self.keyword_list = ['chemistry','energy','molecular','atomic','chemical','biochem',
+                             'organic','polymer','chemical engineering','biotech','colloid',
+                             'corrosion', 'corrosion inhibitor', 'deposition', 'Schiff',
+                             'inhibit', 'corrosive', 'resistance', 'protect', 'acid', 'base',
+                             'coke', 'coking', 'anti-corrosion', 'layer', 'steel',
+                             'mild steel', 'coating', 'degradation', 'oxidation', 'film',
+                             'photo-corrosion', 'hydrolysis']
+        
         #pre-defined lists of section-headers. Longer headers are listed first (e.g.
         #'Methods and materials', with headers that may be contained in other headers
         #(e.g. 'Methods') being listed later. This allows post-matching filtration
@@ -1295,8 +1305,7 @@ class SciFullTextProcessor():
                 correspond to the text within that section of the full-text article
 
 
-        Returns
-        ----------
+        Returns:
             restitched_text (str): Single string containing the full-text article
         """
         restitched_text = ''
@@ -1328,8 +1337,7 @@ class SciFullTextProcessor():
             full_text (str): Single string containing the full-text article
 
 
-        Returns
-        ----------
+        Returns:
             length_check (bool): If lengths are equivalent, length_check == True,
                 else == False
         """
@@ -1339,6 +1347,37 @@ class SciFullTextProcessor():
         length_check = (len(restitched_text) == len(full_text))
 
         return length_check
+    
+    
+    def get_keywords(self, sectioned_text):
+        """
+        Function that identifies which of the search terms are present in a given
+        article.
+        
+        Parameters:
+            sectioned_text (dict): dictionary containing the partitioned fulltext 
+                article string
+            
+        Returns:
+            keywords (list): List of strings of keywords present in a given article
+        """
+        
+        keywords = []
+        
+        if 'full text' in list(sectioned_text.keys()):
+            
+            for word in self.keyword_list:
+                if word in sectioned_text['full text']:
+                    keywords.append(word)
+                    
+        else: 
+            fulltext = self.restitch_text(sectioned_text)
+            for word in self.keyword_list:
+                if word in fulltext:
+                    keywords.append(word)
+                
+        return keywords
+    
 
     def get_partitioned_full_text(self, full_text):
         """
@@ -1401,9 +1440,11 @@ class SciFullTextProcessor():
         else:
             error1 = 1
             sectioned_text = {'full text' : 'there is no text for this article'}
+        
+        keywords = self.get_keywords(sectioned_text)
+        sectioned_text['keywords'] = keywords
 
         error_codes = [error1, error2, error3, error4, error5]
-
         sectioned_text['errors'] = error_codes
 
         return sectioned_text
