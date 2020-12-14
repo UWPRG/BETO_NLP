@@ -1,17 +1,18 @@
+from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from crossref.restful import Members
 from crossref.restful import Works
 import json
 import numpy as np
 import os
+from os import devnull
 import pandas as pd
 import requests
 import subprocess
 import sys
-import textract
 import time
 from tqdm import tqdm
 
-module_path = os.path.abspath(os.path.join('./scipdf_parser-master/scipdf/'))
+module_path = os.path.abspath(os.path.join('../modules/scipdf_parser-master/scipdf/'))
 if module_path not in sys.path:
     sys.path.append(module_path)
     
@@ -57,6 +58,7 @@ class WileyCorpusGenerator():
         self.agent = user_info
         self.mailto = email
         
+        #keyword list to search through for each article
         self.keyword_list = ['chemistry','energy','molecular','atomic','chemical','biochem',
                              'organic','polymer','chemical engineering','biotech','colloid',
                              'corrosion', 'corrosion inhibitor', 'deposition', 'Schiff',
@@ -116,7 +118,8 @@ class WileyCorpusGenerator():
             
             #Add the total number of papers from the response to the saved docs list. 
             saved_docs += len(response['message']['items'])
-            print("Percent complete: " + str(100*saved_docs/doc_number))
+            pcnt_comp = 100*saved_docs/doc_number
+            print(f"{pcnt_comp:.3f}% complete")
 
             #for every entry in the response, loop through each entry. 
             for entries in response['message']['items']:
@@ -284,29 +287,31 @@ class WileyCorpusGenerator():
                 
                 try:
                     if save_pdf == False:
+                        pdf_path = save_path + 'file.pdf'
+
                         if save_figs == False:
                             #Pull the text out of the pdf file. 
-                            article_dict = self.parse_pdf(save_path + 'file.pdf')
-                            
+                            article_dict = self.parse_pdf(pdf_path)
+
                         if save_figs == True:
                             #Pull the text out of the pdf file. 
-                            article_dict = self.parse_pdf(save_path + 'file.pdf',
-                                                          figures = True)
-                        
+                            article_dict = self.parse_pdf(pdf_path, save_path, figures = True)
+
                     else:
+                        pdf_path = pdf_save_path + doi_no_dash + '.pdf'
+
                         if save_figs == False:
                             #Pull the text out of the pdf file. 
-                            article_dict = self.parse_pdf(pdf_save_path + doi_no_dash + '.pdf')
-                            
+                            article_dict = self.parse_pdf(pdf_path)
+
                         if save_figs == True:
                             #Pull the text out of the pdf file. 
-                            article_dict = self.parse_pdf(pdf_save_path + doi_no_dash + '.pdf',
-                                                          figures = True)
-                    
+                            article_dict = self.parse_pdf(pdf_path, save_path, figures = True)
+
                     with open(f'{save_path}/{doi_no_dash}.json', 'w') as f:
                         json.dump(article_dict, f)
                         f.close()
-                    
+
                 except:
                     #check-point save bad articles
                     error_code = 299 #successful pdf retrieval, failed to convert to txt
@@ -487,7 +492,7 @@ class WileyCorpusGenerator():
         
         restitched_text = ''
 
-        text_dict = article_dict['fulltext']
+        text_dict = article_dict['full text']
         
         for key, value in text_dict.items():
             if key in skip_keys:
@@ -605,15 +610,15 @@ class WileyCorpusGenerator():
         reformatted_article['headers_list'] = headers_list
         reformatted_article[' Meta-data '] = metadata
         reformatted_article[' Abstract '] = article_dict['abstract']
-        reformatted_article['fulltext'] = fulltext
+        reformatted_article['full text'] = fulltext
         
-        keywords = self.get_keywords(article_dict)
+        keywords = self.get_keywords(reformatted_article)
         article_dict['keywords'] = keywords
         
         return reformatted_article
-        
     
-    def parse_pdf(self, pdf_path, figures = False):
+    
+    def parse_pdf(self, pdf_path, figure_path = '', figures = False):
         """
         This function uses the scipdf-parser library to convert a PDF of an article
         into a dictionary containing strings of the text, partitioned into its different
@@ -630,6 +635,9 @@ class WileyCorpusGenerator():
             pdf_path (str): String containing the path to the PDF file that is to be
                 converted to a dictionary.
                 
+            figure_path (str): String containing the path to the directory where the
+                extracted files will be saved.
+                
             figures (bool): Variable dictating whether or not to extract figures as PNG
                 and save them during PDF parsing 
         
@@ -640,13 +648,26 @@ class WileyCorpusGenerator():
         """
         
         article_dict = scipdf.parse_pdf_to_dict(pdf_path)
-        
-        if figures:
-            if os.path.isdir('./figures') == False:
-                os.mkdir('./figures')
-            
-            scipdf.parse_figures(pdf_path, output_folder = './figures')
-            
         reformatted_article = self.reformat_article_json(article_dict)
-            
+        
+        if figures == True:
+            if os.path.isdir(figure_path + 'figures/') == False:
+                os.mkdir(figure_path + 'figures/')
+                
+            #suppress completion stdout in scipdf.parse_figures    
+            with suppress_stdout_stderr():
+                scipdf.parse_figures(pdf_path, output_folder = figure_path + 'figures/')
+                
         return reformatted_article
+        
+    
+@contextmanager
+def suppress_stdout_stderr():
+    """
+    A context manager that redirects stdout and stderr to devnull. This is used
+    to silence stdouts from scipdf-parser.
+    """
+    with open(devnull, 'w') as fnull:
+        with redirect_stderr(fnull) as err, redirect_stdout(fnull) as out:
+            yield (err, out)
+

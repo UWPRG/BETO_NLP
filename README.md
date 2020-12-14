@@ -22,7 +22,7 @@ Finally, while these classes provide access to all articles for meta-data search
 
 
 ### Wiley corpus builder
-Usage of the `WileyCorpusGenerator()` class is described in the tutorials directory in the .ipynb 'wiley_corpus_generation.ipynb'. Considerations and prerequisites for using this class are detailed here.
+Usage of the `WileyCorpusGenerator()` class is described in the tutorials directory in 'wiley_corpus_generation.ipynb'. Considerations and prerequisites for using this class are detailed here.
 
 As stated, access to individual articles are regulated by the user's subscription to the publisher. To get articles from the Wiley database, a user API token from the CrossRef Clickthrough API is required. To get this token, users must have a valid email address and ORCID ID. Links to appropriate sites for obtaining these credentials are described in the `WileyCorpusGenerator()` docstring.
 
@@ -30,7 +30,7 @@ The CrossRef API for Wiley allows access to the URL and DOI of articles during t
 
 Access to the GROBID API is run as a background process and needs to be terminated at the end of use. This is done automatically at the end of any DOI and URL dictionaries produced by the `WileyCorpusGenerator.meta_data_search()` method. This background subprocess can also be explicitly terminated by the user.
 
-Users can specify whether or not to save the original PDF, as well as whether or not to extract any figures in the PDF. Figure information is automatically saved in the article JSON.
+Users can specify whether or not to save the original PDF, as well as whether or not to extract any figures in the PDF. Figure captions and information are automatically saved in the article JSON.
 
 ## Corpus processing and tokenization
 -------------------------------
