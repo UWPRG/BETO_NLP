@@ -126,7 +126,7 @@ class CorpusGenerator():
         journal_frame = self.make_jlist(jlist, jlist_url='https://www.elsevier.com/__data/promis_misc/sd-content/journals/jnlactive.xlsx')
 
 
-        if save_dir[-1] is not '/':
+        if save_dir[-1] != '/':
             raise Exception('Output file path must end with /')
 
         if '.scopus/scopus_search' not in self.cache_path:
