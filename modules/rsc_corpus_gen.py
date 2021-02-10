@@ -1,6 +1,7 @@
 import bs4
 from bs4 import BeautifulSoup
 import json
+import mongo_db_interface as mongo
 import os
 import requests
 import selenium
@@ -89,7 +90,7 @@ class RscCorpusGenerator():
         self.opts.add_argument(f'project=[{project}]')
         
         
-    def navigate_search_results(self, save_path, continue_search = False):
+    def navigate_search_results(self, user = '', password = '', save_path = '', continue_search = False, local = False):
         """
         This function pulls up the user-specified URL that corresponds to the RSC search results
         page. This should have the search terms already entered and any necessary filters applied.
@@ -97,13 +98,24 @@ class RscCorpusGenerator():
         function to extract and save the article components.
         
         Parameters:
+            user (str): A whitelisted username for the MongoDB cluster
+            
+            password (str): The corresponding password for the MongoDB username
+            
             save_path (str): A string representing a directory to which the progress reports and
                 successfully scraped articles are saved.
                 
             continue_search (bool): A bool specifying whether to start from beginning of search
                 results, or to find a checkpoint and continue from there.
+                
+            local (bool): Denotes whether results and progress are to be save locally in the
+                `save_path` directory, or remotely in the MongoDB cluster.
         """
+        
         self.save_path = save_path
+        
+        if local == False:
+            self.db_handler = mongo.MongoDBHandler(user, password)
         
         #get webdriver and set user-agent to 'TDMCrawler' in accordance with RSC guidelines        
         driver = webdriver.Chrome(self.driver_path, options = self.opts)
@@ -119,10 +131,16 @@ class RscCorpusGenerator():
         page_num = 0
         article_count = 0
         progress_json = {'page links':{},
-                         'page statuses':{}}
+                         'page statuses':{},
+                         'title': 'rsc_search_progress'}
         
         if continue_search == True:
-            progress_json = self.load_progress_json()
+            if local == True:
+                progress_json = self.load_local_progress_json()
+                
+            if local == False:
+                progress_json = self.load_remote_progress_json()
+                
             start_place = self.find_checkpoint(progress_json)
             
             article_count = start_place[1]
@@ -186,13 +204,19 @@ class RscCorpusGenerator():
                     article_json = self.get_article_html(page_source)
 
                     #save a JSON containing results and success code
-                    self.save_article(article_json)
+                    if local == True:
+                        self.save_article_locally(article_json)
+                    else:
+                        self.save_article_remotely(article_json)
                     article_count+=1
                     successes.append(article_count)
 
                     #save progress so far
                     progress_json[f'page statuses'][page_num] = successes
-                    self.save_progress(progress_json)
+                    if local == True:
+                        self.save_progress_locally(progress_json)
+                    else:
+                        self.save_progress_remotely(progress_json)
 
                     #close the newly opened tab and switch driver to results page
                     driver.close()
@@ -302,24 +326,39 @@ class RscCorpusGenerator():
         return  article
     
     
-    def save_progress(self, article_https):
+    def save_progress_locally(self, progress_json):
         """
         A function that saves the scraped htmls and their success status to the
         save path defined in self.navigate_results_page().
         
         Parameters:
-            article_htmls (dict): A dict that contains lists of article https links
+            progress_json (dict): A dict that contains lists of article https links
                 and their success status
         """
         
         with open(self.save_path+'search_progress.json', 'w') as f:
-            json.dump(article_https, f)
+            json.dump(progress_json, f)
             f.close()
             
         return
     
     
-    def load_progress_json(self, ):
+    def save_progress_remotely(self, progress_json):
+        """
+        A function that saves the scraped htmls and their success status to the
+        MongoDB defined in self.db_handler().
+        
+        Parameters:
+            progress_json (dict): A dict that contains lists of article https links
+                and their success status
+        """
+        
+        self.db_handler.upload_progress_document(progress_json)
+            
+        return
+    
+    
+    def load_local_progress_json(self, ):
         """
         Returns:
             progress_json (dict): The saved article progress reporter
@@ -328,6 +367,17 @@ class RscCorpusGenerator():
         with open(self.save_path+'search_progress.json', 'r') as f:
             progress_json = json.load(f)
             f.close()
+            
+        return progress_json
+    
+    
+    def load_remote_progress_json(self, ):
+        """
+        Returns:
+            progress_json (dict): The saved article progress reporter
+        """
+        
+        progress_json = self.db_handler.retrieve_article_by_title('rsc_search_progress')
             
         return progress_json
     
@@ -358,9 +408,14 @@ class RscCorpusGenerator():
         return start_place
     
     
-    def save_article(self, article_json):
+    def save_article_locally(self, article_json):
         """
-        THIS WILL NEED TO BE UPDATED TO INTERFACE WITH MONGODB
+        A function that saves the scraped article and its metadata to the save path defined
+        in self.navigate_results_page().
+        
+        Parameters:
+            article_json (dict): A dict that contains lists of article https links
+                and their success status
         """
         
         article_save_path = self.save_path + article_json['doi'] + '.json'
@@ -368,6 +423,20 @@ class RscCorpusGenerator():
         with open(article_save_path, 'w') as f:
             json.dump(article_json, f)
             f.close()
+            
+        return
+    
+    
+    def save_article_remotely(self, article_json):
+        """
+        A function that saves a scraped article and its metadata to the
+        MongoDB defined in self.db_handler().
+        
+        Parameters:
+            article_json (dict): A dict that contains an article and its metadata
+        """
+        
+        self.db_handler.upload_single_document(article_json)
             
         return
     
