@@ -1,7 +1,6 @@
 import bs4
 from bs4 import BeautifulSoup
 import json
-import mongo_db_interface as mongo
 import os
 import requests
 import selenium
@@ -12,6 +11,8 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.wait import WebDriverWait
 import sys
 import time
+
+import mongo_db_interface as mongo
 
 
 class RscCorpusGenerator():
@@ -143,15 +144,9 @@ class RscCorpusGenerator():
                 
             start_place = self.find_checkpoint(progress_json)
             
+            page_num = start_place[0]
             article_count = start_place[1]
             start_article = article_count % 25
-                        
-            #if last search ended at the end of a page (each page containing 25 articles)
-            if start_article == 0:
-                page_num = start_place[0]+1
-                
-            else:
-                page_num = start_place[0]
             
             #need to denote if you have navigated away from starting page
             landing_page = True
@@ -183,14 +178,13 @@ class RscCorpusGenerator():
 
                 #for the given page, get and store all article links
                 page_https = self.get_page_article_links(soup)
-                progress_json['page links'][page_num] = page_https
+                progress_json['page links'][str(page_num)] = page_https
                 
                 successes = []
                 
             for page in page_https:
                 
                 if page == 'pdf only':
-                    print('pdf only')
                     successes.append('pdf only')
                     article_count+=1
                     
@@ -212,7 +206,7 @@ class RscCorpusGenerator():
                     successes.append(article_count)
 
                     #save progress so far
-                    progress_json[f'page statuses'][page_num] = successes
+                    progress_json[f'page statuses'][str(page_num)] = successes
                     if local == True:
                         self.save_progress_locally(progress_json)
                     else:
@@ -233,7 +227,6 @@ class RscCorpusGenerator():
                 soup = BeautifulSoup(source, 'html.parser') 
                 
             except:
-                print('beginning of except')
                 last_page = True
                 
         driver.quit()
@@ -377,7 +370,7 @@ class RscCorpusGenerator():
             progress_json (dict): The saved article progress reporter
         """
         
-        progress_json = self.db_handler.retrieve_article_by_title('rsc_search_progress')
+        progress_json = self.db_handler.retrieve_doc_by_title('rsc_search_progress')
             
         return progress_json
     
@@ -436,7 +429,7 @@ class RscCorpusGenerator():
             article_json (dict): A dict that contains an article and its metadata
         """
         
-        self.db_handler.upload_single_document(article_json)
+        self.db_handler.upload_article_document(article_json)
             
         return
     

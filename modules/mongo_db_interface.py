@@ -40,6 +40,20 @@ class MongoDBHandler():
         
         return
     
+    def return_client_corpus_object(self, ):
+        """
+        This function returns self.corpus for users to perform their own queries and updates
+        that are beyond the functionality of this class.
+        
+        Parameters:
+        
+        Returns:
+            self.corpus (pymongo.database.collection object): The pymongo object that corresponds
+                to the corpus, which is the 'collection' in MongoDB verbiage.
+        """
+        
+        return self.corpus
+    
     
     def upload_from_directory(self, directory):
         """
@@ -90,7 +104,7 @@ class MongoDBHandler():
                 else:
                     for k, v in art_json.items():
                         self.corpus.update_one({'_id': art_json['_id']},
-                                          {'$set': {k:v}},
+                                          {'$set': {str(k):v}},
                                           upsert = True)
 
             elif 'search_progress' in article:
@@ -138,7 +152,7 @@ class MongoDBHandler():
         else:
             for k, v in article_json.items():
                 self.corpus.update_one({'_id': article_json['_id']},
-                                  {'$set': {k:v}},
+                                  {'$set': {str(k):v}},
                                   upsert = True)
         
         return
@@ -168,8 +182,8 @@ class MongoDBHandler():
         else:
             for k, v in prog_json.items():
                 self.corpus.update_one({'title': prog_json['title']},
-                                  {'$set': {k:v}},
-                                  upsert = True)
+                                       {'$set': {str(k):v}},
+                                        upsert = True)
         
         return
     
@@ -241,8 +255,8 @@ class MongoDBHandler():
         
         #get a list of all DOI _id's
         doi_docs = list(self.corpus.find({'_id':
-                                            {'$regex': '10-*'}
-                                         }))
+                                            {'$regex': '10-*'}},
+                                         {'_id':1}))
         
         doc_ids = []
         
@@ -255,4 +269,30 @@ class MongoDBHandler():
                                      }))
         
         return docs
+    
+    
+    def retrieve_all_article_doi(self, ):
+        """
+        This function retrieves all ObjectID that correspond to journal articles. It uses a RegEx
+        pattern match of '10-', which should be the first 3 characters of any article DOI. These
+        _id's are returned as an iterable list.
+        
+        Parameters:
+        
+        Returns:
+            doi_ids (list): List of strings containing the DOI of articles in the MongoDB. These DOI
+                correspond to the unique ObjectID.
+        """
+        
+        #get a list of all DOI _id's
+        doi_fields = list(self.corpus.find({'_id':
+                                                {'$regex': '10-*'}}, #regex match to DOI
+                                           {'_id':1}))   #return only the _id field
+        
+        #iterate through field dicts and extract the values
+        doi_ids = []
+        for doi in doi_fields:
+            doi_ids.append(doi['_id'])
+        
+        return doi_ids
 
