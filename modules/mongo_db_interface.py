@@ -55,6 +55,21 @@ class MongoDBHandler():
         return self.corpus
     
     
+    def return_client_db_object(self, ):
+        """
+        This function returns self.db for users to perform their own queries and updates
+        that are beyond the functionality of this class.
+        
+        Parameters:
+        
+        Returns:
+            self.db (pymongo.databaseobject): The pymongo object that corresponds
+                to the database object.
+        """
+        
+        return self.db
+    
+    
     def upload_from_directory(self, directory):
         """
         In the case that a user has been saving documents locally, rather than directly
@@ -89,7 +104,7 @@ class MongoDBHandler():
                     f.close()
 
                 t = datetime.datetime.utcnow()
-                timestamp = t.strftime('%H:%M.%S  %d %b %Y')    
+                timestamp = t.strftime('%Y %b %d %H:%M.%S')    
                 art_json['upload_timestamp'] = timestamp
 
                 art_json['_id'] = art_json['doi']
@@ -115,7 +130,7 @@ class MongoDBHandler():
                     f.close()
 
                 t = datetime.datetime.utcnow()
-                timestamp = t.strftime('%H:%M.%S  %d %b %Y')    
+                timestamp = t.strftime('%Y %b %d %H:%M.%S')    
                 progress_json['upload_timestamp'] = timestamp
 
                 self.corpus.insert_one(progress_json)
@@ -137,7 +152,7 @@ class MongoDBHandler():
         """
         
         t = datetime.datetime.utcnow()
-        timestamp = t.strftime('%H:%M.%S  %d %b %Y')    
+        timestamp = t.strftime('%Y %b %d %H:%M.%S')    
         article_json['upload_timestamp'] = timestamp
         
         article_json['_id'] = article_json['doi']
@@ -169,7 +184,7 @@ class MongoDBHandler():
         """
         
         t = datetime.datetime.utcnow()
-        timestamp = t.strftime('%H:%M.%S  %d %b %Y')    
+        timestamp = t.strftime('%Y %b %d %H:%M.%S')    
         prog_json['upload_timestamp'] = timestamp
             
         results_count = self.corpus.count_documents({'title':prog_json['title']})
