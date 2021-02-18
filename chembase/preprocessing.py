@@ -864,16 +864,6 @@ class SciTextProcessor():
                     tokens.append(sentence_tokens)
 
                 cem_tracker = 0
-                phrase_tracker = {}
-                cem_spans = []
-                for k, extract_sentence in enumerate(self.entity_idxs[i]):
-                    for j, extract_entity in enumerate(extract_sentence):
-                        if extract_entity[1] != 'chemical_entity':
-                            if extract_entity[0] not in phrase_tracker.keys():
-                                phrase_tracker[extract_entity[0]] = [1, 0]
-                            else:
-                                phrase_tracker[extract_entity[0]][0] += 1
-
                 for k, extract_sentence in enumerate(self.entity_idxs[i]):
                     for j, extract_entity in enumerate(extract_sentence):
                         if extract_entity[1] == 'chemical_entity':
@@ -889,16 +879,17 @@ class SciTextProcessor():
                                 phrase_iter = [[m.start(), m.end()] for m in re.finditer(extract_entity[0], text.lower())]
                             except:
                                 phrase_iter = []
-                            if len(phrase_iter) != phrase_tracker[extract_entity[0]][0]:
-                                self.entity_idxs[i][k][j] = extract_entity + [-1, -1]
-                            elif len(phrase_iter) == 1:
-                                self.entity_idxs[i][k][j] = extract_entity + phrase_iter[0]
-                            elif extract_entity[0] in phrase_tracker.keys():
-                                self.entity_idxs[i][k][j] = extract_entity + phrase_iter[phrase_tracker[extract_entity[0]][1]]
-                                phrase_tracker[extract_entity[0]][1] += 1
+                            if j == 0:
+                                try:
+                                    prev_loc = self.entity_idxs[i][k-1][-1][-1]
+                                except IndexError:
+                                    prev_loc = 0
                             else:
-                                self.entity_idxs[i][k][j] = extract_entity + phrase_iter[0]
-                                phrase_tracker[extract_entity[0]][1] += 1
+                                prev_loc = self.entity_idxs[i][k][j-1][-1]
+                            for span in phrase_iter:
+                                if span[0] > prev_loc:
+                                    self.entity_idxs[i][k][j] = extract_entity + span
+                                    break
             self.tokenized_texts[i] = tokens
 
         if save:
