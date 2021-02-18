@@ -1,2 +1,13 @@
-# BETO_NLP
-Repo for working on the NLP project and will try to keep it neat.
+# ChemBASE
+An open-source toolkit for NLP to create corpora of academic texts and to extract compounds and properties from them.
+
+# Usage:
+-------------------------------
+
+
+## Corpus processing and tokenization
+-------------------------------
+
+
+## Chemical entity and property extraction 
+-------------------------------
