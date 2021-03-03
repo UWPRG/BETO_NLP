@@ -1,3 +1,5 @@
+from __future__ import absolute_import
+
 import datetime
 import json
 import os
@@ -33,10 +35,11 @@ class MongoDBHandler():
             password (str): The corresponding password for the username
         """
         
-        client = MongoClient('mongodb+srv://' + user + ':' + password + '@practice-general-corpus.qt2hh.mongodb.net/BETO_corpus_practice?retryWrites=true&w=majority')
-        
-        self.db = client.practice_corpus
-        self.corpus = self.db.OPV
+        client = MongoClient('mongodb+srv://' + user + ':' + password + '@beto-corpora.cljbt.mongodb.net/Corpus?retryWrites=true&w=majority')
+
+        self.cluster = client.beto_corpora
+        self.corpus = self.cluster.Corpus
+        self.mol_ents = self.cluster.MolecularEntities
         
         return
     
@@ -53,6 +56,20 @@ class MongoDBHandler():
         """
         
         return self.corpus
+    
+    def return_client_mol_ents_object(self, ):
+        """
+        This function returns self.corpus for users to perform their own queries and updates
+        that are beyond the functionality of this class.
+        
+        Parameters:
+        
+        Returns:
+            self.mol_ents (pymongo.database.collection object): The pymongo object that corresponds
+                to the MolecularEntities collection.
+        """
+        
+        return self.mol_ents
     
     
     def return_client_db_object(self, ):
@@ -105,9 +122,9 @@ class MongoDBHandler():
 
                 t = datetime.datetime.utcnow()
                 timestamp = t.strftime('%Y %b %d %H:%M.%S')    
-                art_json['upload_timestamp'] = timestamp
+                art_json['UploadTimestamp'] = timestamp
 
-                art_json['_id'] = art_json['doi']
+                art_json['_id'] = art_json['DOI']
 
                 results_count = self.corpus.count_documents({'_id':art_json['_id']})
 
@@ -131,7 +148,7 @@ class MongoDBHandler():
 
                 t = datetime.datetime.utcnow()
                 timestamp = t.strftime('%Y %b %d %H:%M.%S')    
-                progress_json['upload_timestamp'] = timestamp
+                progress_json['UploadTimestamp'] = timestamp
 
                 self.corpus.insert_one(progress_json)
 
@@ -153,9 +170,9 @@ class MongoDBHandler():
         
         t = datetime.datetime.utcnow()
         timestamp = t.strftime('%Y %b %d %H:%M.%S')    
-        article_json['upload_timestamp'] = timestamp
+        article_json['UploadTimestamp'] = timestamp
         
-        article_json['_id'] = article_json['doi']
+        article_json['_id'] = article_json['DOI']
 
         results_count = self.corpus.count_documents({'_id':article_json['_id']})
 
@@ -185,9 +202,9 @@ class MongoDBHandler():
         
         t = datetime.datetime.utcnow()
         timestamp = t.strftime('%Y %b %d %H:%M.%S')    
-        prog_json['upload_timestamp'] = timestamp
+        prog_json['UploadTimestamp'] = timestamp
             
-        results_count = self.corpus.count_documents({'title':prog_json['title']})
+        results_count = self.corpus.count_documents({'Title':prog_json['Title']})
 
         #create new object with unique ID
         if results_count == 0:
@@ -196,7 +213,7 @@ class MongoDBHandler():
         #update existing object
         else:
             for k, v in prog_json.items():
-                self.corpus.update_one({'title': prog_json['title']},
+                self.corpus.update_one({'Title': prog_json['Title']},
                                        {'$set': {str(k):v}},
                                         upsert = True)
         
@@ -242,7 +259,7 @@ class MongoDBHandler():
                 data.
         """
         
-        doc = list(self.corpus.find({'title':title}))
+        doc = list(self.corpus.find({'Title':title}))
         
         if len(doc) == 0:
             return None
@@ -310,4 +327,86 @@ class MongoDBHandler():
             doi_ids.append(doi['_id'])
         
         return doi_ids
+    
+    
+    def upload_properties_document(self, molecular_entity):
+        """
+        
+        """
+            
+        matched_ents = []
+        new_ent = {}
+
+        names = molecular_entity['Synonyms']
+
+        #get all possible matches that exist in the database
+        for nm in names:     
+            matches = list(self.mol_ents.find({'Synonyms': nm}))    
+            matched_ents.extend(matches)
+
+        #no existing matches
+        if len(matched_ents) == 0:
+            new_ent['Synonyms'] = names
+            new_ent['Properties'] = molecular_entity['Properties']
+            
+            t = datetime.datetime.utcnow()
+            timestamp = t.strftime('%Y %b %d %H:%M.%S')     
+            new_ent['UploadTimestamp'] = timestamp
+            self.mol_ents.insert_one(new_ent)
+
+        #single match
+        if len(matched_ents) == 1:
+            old_ent = matched_ents[0]
+
+            if 'Properties' in old_ent:
+                old_prop_dict_list = old_ent['Properties']
+                old_prop_dict_list.extend(molecular_entity['Properties'])
+
+                new_ent['Synonyms'] = old_ent['Synonyms']
+                new_ent['Properties'] = old_prop_dict_list
+
+            else:
+                new_ent['Synonyms'] = old_ent['Synonyms']
+                new_ent['Properties'] = molecular_entity['Properties']
+                
+            t = datetime.datetime.utcnow()
+            timestamp = t.strftime('%Y %b %d %H:%M.%S')     
+            new_ent['UploadTimestamp'] = timestamp
+            
+            for k, v in new_ent.items():
+                self.mol_ents.update_one({'_id': old_ent['_id']},
+                                         {'$set': {k:v}},
+                                         upsert = True)
+
+        #multiple matches (probably due to multiple names or abbreviations)
+        if len(matched_ents) > 1:
+
+            #update matched entity with longest name (assume that's the IUPAC name)
+            longest_name = max(names)
+            for match in matched_ents:
+                if longest_name in match['Synonyms']:
+
+                    if 'Properties' in match:
+                        old_prop_dict_list = match['Properties']
+                        old_prop_dict_list.extend(molecular_entity['Properties'])
+
+                        new_ent['Synonyms'] = match['Synonyms']
+                        new_ent['Properties'] = old_prop_dict_list
+
+                    else:
+                        new_ent['Synonyms'] = match['Synonyms']
+                        new_ent['Properties'] = molecular_entity['Properties']
+                        
+                    t = datetime.datetime.utcnow()
+                    timestamp = t.strftime('%Y %b %d %H:%M.%S')     
+                    new_ent['UploadTimestamp'] = timestamp
+
+                    for k, v in new_ent.items():
+                        self.mol_ents.update_one({'_id': match['_id']},
+                                                 {'$set': {k:v}},
+                                                 upsert = True)
+                else:
+                    pass
+ 
+        return
 

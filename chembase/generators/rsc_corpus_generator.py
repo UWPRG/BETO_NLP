@@ -1,10 +1,14 @@
+from __future__ import absolute_import
+
 import bs4
 from bs4 import BeautifulSoup
 import json
 import os
+import re
 import requests
 import selenium
 from selenium import webdriver
+from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support import expected_conditions as EC
@@ -12,7 +16,9 @@ from selenium.webdriver.support.wait import WebDriverWait
 import sys
 import time
 
-import mongo_db_interface as mongo
+sys.path.append('../')
+import utils.db_handler as mongo
+import parsers.rsc_html_parser as parser
 
 
 class RscCorpusGenerator():
@@ -90,6 +96,15 @@ class RscCorpusGenerator():
         self.opts.add_argument(f'mailto=[{contact_email}]')
         self.opts.add_argument(f'project=[{project}]')
         
+        self.keywords = ['chemistry', 'chemical', 'chemical engineering', 'polymer', 'photovoltaic',
+                         'OPV', 'semiconductor', 'transister', 'OFET', 'OTFT', 'ternary blend',
+                         'nonfullerene acceptor', 'non-fullerene acceptor', 'thermoelectric', 'LED',
+                         'sensor', 'donor', 'acceptor', 'copolymer','energy','molecular','atomic',
+                         'biochem', 'organic', 'biotech','colloid', 'corrosion', 'corrosion inhibitor',
+                         'deposition', 'Schiff', 'inhibit', 'corrosive', 'resistance', 'protect', 'acid',
+                         'base', 'coke', 'coking', 'anti-corrosion', 'layer', 'steel', 'mild steel',
+                         'coating', 'degradation', 'oxidation', 'film', 'photo-corrosion', 'hydrolysis']
+        
         
     def navigate_search_results(self, user = '', password = '', save_path = '', continue_search = False, local = False):
         """
@@ -127,13 +142,17 @@ class RscCorpusGenerator():
         #go to search results page
         driver.get(self.search_page_url)
         
+        max_wait_time = 20
+        wait = WebDriverWait(driver, max_wait_time)
+        next_button = wait.until(EC.visibility_of_all_elements_located((By.CSS_SELECTOR, "a[class^=paging__btn]")))[1]
+        
         last_page = False
         landing_page = False
         page_num = 0
         article_count = 0
         progress_json = {'page links':{},
                          'page statuses':{},
-                         'title': 'rsc_search_progress'}
+                         'Title': 'rsc_search_progress'}
         
         if continue_search == True:
             if local == True:
@@ -153,8 +172,10 @@ class RscCorpusGenerator():
             
             #navigate to correct starting page of results
             for i in range(1, page_num):
-                time.sleep(10)
-                driver.find_element_by_class_name('paging__btn--next').click()                
+                time.sleep(2)
+                driver.find_element_by_class_name('paging__btn--next').click() 
+#                 next_button.click()
+#                 driver.implicitly_wait(5)
         
         #get the source HTML of current page and parse into bs4 object
         source = driver.page_source
@@ -217,12 +238,15 @@ class RscCorpusGenerator():
                     driver.switch_to.window(driver.window_handles[0])
 
                     #delay between requests in accordance with RSC Guidelines
-                    time.sleep(10)
+                    time.sleep(5)
                                                             
             #if on the last page of search results, exit loop. Else, go to next page
             try:
                 driver.find_element_by_class_name('paging__btn--next').click()
-                time.sleep(10)
+                art_wait = wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, '.capsule.capsule--article')))
+                art_wait
+#                 time.sleep(10)
+#                 next_button.click()
                 source = driver.page_source
                 soup = BeautifulSoup(source, 'html.parser') 
                 
@@ -292,31 +316,163 @@ class RscCorpusGenerator():
             source (str): A string that contains the HTML components of the article's webpage
             
         Returns:
-            article (dict): A dict that contains the article metadata and HTML components
+            article (dict): A dict that contains the article metadata, abstract string, HTML
+                components, and full-text string.
         """
         
         article = {}
                         
         soup = BeautifulSoup(source, 'html.parser')
         
-        title = soup.title.text
+        title_string = soup.title.text
         
-        doi_start = title.find('DOI:') + 4
-        doi = title[doi_start:]
-        doi = doi.replace('/', '-')
-        doi = doi.replace('.', '-')
+        doi_start = title_string.find('DOI:') + 4
+        doi = title_string[doi_start:]
+        
+        #if there are multiple hyphens, choose the last one b/c journal names won't have one
+        journal_start = [m.start() for m in re.finditer(' - ', title_string)][-1]
+        journal_end = title_string.find('(RSC')
+        journal_name = title_string[journal_start+3 : journal_end]
         
         try:
-            abstract = soup.find('p', {'class':'abstract'}).text
+            abstract = soup.find('p', {'class': 'abstract'}).text
         except:
             abstract = 'no abstract'
         
-        article['doi'] = doi
-        article['title'] = title
-        article['abstract'] = abstract
-        article['html'] = source
+        article['DOI'] = doi
+        article['Title'] = title_string
+        article['Abstract'] = abstract
+        
+        article['Raw'] = source
+        
+        if soup.find('div', {'class': 'article_info'}) != None:
+            article['FullText'] = self.get_full_text(article['Raw'])
+            article['Keywords'] = self.match_keywords(article['FullText'])
+            meta_data['PubDate'] = self.get_pub_date(article['Raw'])
+            
+        else:
+            article['FullText'] = 'no full text'
+            
+        
+        meta_data = {}
+        
+        meta_data['PII'] = 'no PII'
+        meta_data['Authors'] = self.get_authors(soup)
+        meta_data['JournalName'] = journal_name
+        meta_data['Publisher'] = 'RSC'
+        meta_data['RawType'] = 'HTML'
+        
+        article['MetaData'] = meta_data
                 
         return  article
+    
+    
+    def match_keywords(self, fulltext):
+        """
+        This function takes in an article fulltext and uses regular expression to identify keyword
+        matches as defined by the keyword list in the self.__init__() function.
+        
+        Parameters:
+            fulltext (str): a string containing the article text, tables, and captions
+            
+        Returns:
+            matches(list): a list of strings denoting the words matched to self.keywords
+        """
+        
+        matches = re.findall(r"(?=("+'|'.join(self.keywords)+r"))", fulltext)
+        matches = list(set(matches))
+        
+        return matches
+    
+    
+    def get_pub_date(self, html):
+        """
+        This function takes in a raw article html and uses string functions to identify the publication
+        date.
+        
+        Parameters:
+            html (str): a string containing the raw html of an RSC journal article
+            
+        Returns:
+            pub_date (str): a string containing the publication date of the article
+        """
+        pub_start = html.find('>First published on ') + 20
+        truncated = html[pub_start : pub_start+30]
+        pub_end = truncated.find('</p>')
+        
+        pub_date = truncated[:pub_end]
+        
+        return pub_date
+    
+    
+    def get_authors(self, soup):
+        """
+        This function looks through the article HTML to identify author names and returns them
+        as a list of lists.
+        
+        Parameters:
+            soup (soup.BeatifulSoup Object): BeautifulSoup object that contains the article HTML
+            
+        Returns:
+            author_list (list of lists): List of lists where author names are saved as [['firstname',
+                'lastname'], ['firstname', 'lastname'], ...]
+        """
+        
+        author_header = soup.find('p', {'class':'header_text'})
+
+        author_list = []
+        
+        if hasattr(author_header, 'children'):
+
+            for child in author_header.children:
+
+                if isinstance(child, bs4.NavigableString):
+                    pass
+
+                else:
+                    for chld in child:
+                        if isinstance(chld, bs4.NavigableString):
+                            chld = chld.replace('\n', '')
+                            chld = chld.split(' ')
+
+                            #lots of spaces that need to be removed
+                            chld = list(set(chld))
+
+                            #affiliations are the last child
+                            if len(chld) <= 4 and len(chld) > 1:
+
+                                #between multiple authors
+                                if chld[1] != 'and':
+
+                                    #skip first space that is left by list(set(chld))
+                                    author_list.append(chld[1:])
+
+                        else:
+                            pass
+                        
+                    else:
+                        pass
+
+        return author_list
+    
+    
+    def get_full_text(self, html_string):
+        """
+        A function that consolidates and extracts the complete article string from
+        the HTML of the article.
+        
+        Parameters:
+            html_string (str): string containing the HTML for the article
+            
+        Returns:
+            full_text_string (str): string containing the fulltext string for the article
+        """
+        
+        self.parser = parser.RscHtmlParser()
+        full_text_string = self.parser.parse(html_string)
+        
+        return full_text_string
+        
     
     
     def save_progress_locally(self, progress_json):
@@ -411,7 +567,7 @@ class RscCorpusGenerator():
                 and their success status
         """
         
-        article_save_path = self.save_path + article_json['doi'] + '.json'
+        article_save_path = self.save_path + article_json['DOI'] + '.json'
         
         with open(article_save_path, 'w') as f:
             json.dump(article_json, f)
