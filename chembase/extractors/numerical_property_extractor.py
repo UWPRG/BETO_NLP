@@ -57,7 +57,7 @@ class PropertyExtractor():
             else:
                 self.reader = nlm.NlmXmlReader()
         
-        #can also incorporate scipdf as a reader here
+        #TODO: incorporate scipdf as a reader here
         if self.format == 'PDF':
             self.reader = pdf.PdfReader()
             
