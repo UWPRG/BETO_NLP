@@ -12,7 +12,7 @@ class PropertyHandler():
         Get this thing started.
         """
         
-    def get_property_values_and_counts(self, mols_with_props):
+    def get_property_values_and_counts(self, mols_with_props, doi = False):
         """
         Iterates through a list of objects returned by a list(db.collection.find()) search in the 
         MolecularEntities collection. Assumes that all objects in the list have associated properties
@@ -20,6 +20,8 @@ class PropertyHandler():
         
         Parameters:
             mols_with_props (list): list of MolecularEntities objects that have a 'Properties' field.
+            
+            doi (bool): If True, function returns a list of the DOI that cites each value.
             
         Returns:
             val_df (pd.DataFrame): DataFrame object listing all the properties as rows and all their
@@ -34,6 +36,8 @@ class PropertyHandler():
         prop_counts = {}
         #dict of property:[list of (value, unit) tuples] pairs
         prop_vals = {}
+        #list of doi numbers for each (value, unit) tuple
+        dois = {}
 
         for entity in mols_with_props:
 
@@ -52,6 +56,8 @@ class PropertyHandler():
                             #only track values of properties, not spectra
                             if '_spectra' not in k:
                                 prop_vals[k] = []
+                                if doi == True:
+                                    dois[k] = []
                                 for entry_dict in v:
                                     if 'units' in entry_dict:
                                         property_value = (entry_dict['value'], entry_dict['units'])
@@ -73,11 +79,68 @@ class PropertyHandler():
                                         property_value = (entry_dict['value'])
 
                                     prop_vals[k].append(property_value)
+                                    if doi == True:
+                                        dois[k].append(entry['AssociatedDOI'])
                                     
         count_df = pd.DataFrame.from_dict(prop_counts, orient = 'index')
         val_df = pd.DataFrame.from_dict(prop_vals, orient = 'index')
         
-        return val_df, count_df
+        if doi == True:
+            doi_df = pd.DataFrame.from_dict(dois, orient = 'index')
+            return val_df, count_df, doi_df
+        
+        else:
+            return val_df, count_df
+    
+    
+    def get_single_property_value_and_names(self, mols_with_props, prop_type):
+        """
+        Iterates through a list of objects returned by a list(db.collection.find()) search in the 
+        MolecularEntities collection. Assumes that all objects in the list have associated properties
+        in the 'Properties' field.
+        
+        Parameters:
+            mols_with_props (list): list of MolecularEntities objects that have a 'Properties' field.
+            
+            prop_type (str): the ChemDataExtractor property type (e.g. 'corrosion_inhibition')
+            
+        Returns:
+            property_df (pd.DataFrame): DataFrame object listing the property and all of the entities
+                that have that property. It also contains those values. Each value cell is a tuple
+                containing (value, units). If there are no associated units, then only the value is 
+                listed without the tuple.
+        """
+        
+        #dict of lists of entity synonyms and [list of (value, unit) tuples] pairs
+        prop_vals = {'Property' : prop_type,
+                     'Synonyms': [],
+                     'ValueStrings': []}
+
+        for entity in mols_with_props:
+
+            props = entity['Properties']
+
+            #list of property dicts
+            for entry in props:
+                #property dicts where v is a list of dicts
+                for k, v in entry.items():
+                    #skip DOIs
+                    if k == prop_type:
+                        
+                        for entry_dict in v:
+                            if 'units' in entry_dict:
+                                property_value = (entry_dict['value'], entry_dict['units'])
+                            else:
+                                property_value = (entry_dict['value'])
+
+                            prop_vals['ValueStrings'].append(property_value)
+                            prop_vals['Synonyms'].append(entity['Synonyms'])
+
+                        
+                                    
+        property_df = pd.DataFrame.from_dict(prop_vals)
+        
+        return property_df
     
     
     def convert_value_format(self, value):
@@ -112,6 +175,9 @@ class PropertyHandler():
 
         if '∼' in value:
             value = value.replace('∼', '')
+            
+        if '*' in value:
+            value = value.replace('*', '')
 
         if '±' in value:
             idx = value.index('±')
@@ -119,6 +185,7 @@ class PropertyHandler():
 
         #if a range is given, record the average
         if '–' in value:
+#             print('opt 1')
             value = value.replace(' ', '')
 
             #make sure '-' is not a negative sign
@@ -144,6 +211,7 @@ class PropertyHandler():
                 float_value = sum(vals)/len(vals)
 
         if '-' in value:
+#             print('opt 2')
             value = value.replace(' ', '')
 
             #make sure '-' is not a negative sign
@@ -167,6 +235,7 @@ class PropertyHandler():
                 float_value = sum(vals)/len(vals)
 
         if '−' in value:
+#             print('opt 3')
             value = value.replace(' ', '')
 
             #make sure '-' is not a negative sign
@@ -183,6 +252,21 @@ class PropertyHandler():
 
                 else:
                     float_value = sum(vals) / len(vals)
+                    
+            if value.count('−') == 2:
+                if value[0] == '−':
+                    vals = value.split('−')
+                    vals.remove('')
+                    vals = [float(x) for x in vals]
+                    vals[0] = -vals[0]
+                    float_value = vals
+                    
+                else:
+                    vals = value.split('−')
+                    vals.remove('')
+                    vals = [float(x) for x in vals]
+                    vals[1] = -vals[1]
+                    float_value = vals
 
             if value.count('−') == 3:
                 vals = value.split('−')
@@ -190,6 +274,7 @@ class PropertyHandler():
                 float_value = sum(vals)/len(vals)
 
         if '–' in value:
+#             print('opt 4')
             value = value.replace(' ', '')
             #make sure '-' is not a negative sign
             if value.count('–') == 1:
@@ -233,12 +318,12 @@ class PropertyHandler():
         return float_value
     
     
-    def get_vals_and_units(self, row):
+    def get_vals_and_units(self, row, track_index = False):
         """
-        Takes in a single property row of the val_df and returns a list of the values and units.
-        Because of the way values are reported in literature, some reformatting and parsing of value
-        ranges, multiple instances, or approximate values are converted to single values. Uncertainties
-        are dropped.
+        Takes in a single property row of the val_df (or property_df) and returns a list of the values
+        and units. Because of the way values are reported in literature, some reformatting and parsing
+        of value ranges, multiple instances, or approximate values are converted to single values.
+        Uncertainties are dropped.
         
         Parameters:
             row (pd.Series): a Series object that contains all the (value, unit) tuples for a given
@@ -258,9 +343,11 @@ class PropertyHandler():
 
         values = []
         units = []
+        
+        indices = []
 
         for cell in row_cells:
-        #     print(cell)
+#             print(cell)
             if type(cell) == tuple:
                 str_value = cell[0]
                 unit = cell[1]
@@ -271,16 +358,23 @@ class PropertyHandler():
             value = self.convert_value_format(str_value)
             
             if type(value) == list:
-                values.append(value[0])
-                values.append(value[1])
-                units.append(unit)
-                units.append(unit)
+                for val in value:
+                    values.append(val)
+                    units.append(unit)
+                    if track_index == True:
+                        indices.append(1)
                 
             else:
                 values.append(value)
                 units.append(unit)
+                if track_index == True:
+                        indices.append(0)
+                        
+        if track_index == True:
+            return values, units, indices
 
-        return values, units
+        else:
+            return values, units
     
 
     def convert_mol_weight_units(self, values, units):
@@ -635,7 +729,8 @@ class PropertyHandler():
         scaled_u = []
 
         for val, un in zip(values, units):
-            if val > 10:
+                
+            if val > 10 or val < -10:
                 continue
                 
             if val < 0:
