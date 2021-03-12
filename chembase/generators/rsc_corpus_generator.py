@@ -348,7 +348,6 @@ class RscCorpusGenerator():
         if soup.find('div', {'class': 'article_info'}) != None:
             article['FullText'] = self.get_full_text(article['Raw'])
             article['Keywords'] = self.match_keywords(article['FullText'])
-            meta_data['PubDate'] = self.get_pub_date(article['Raw'])
             
         else:
             article['FullText'] = 'no full text'
@@ -356,7 +355,7 @@ class RscCorpusGenerator():
         
         meta_data = {}
         
-        meta_data['PII'] = 'no PII'
+        meta_data['PubDate'] = self.get_pub_date(article['Raw'])
         meta_data['Authors'] = self.get_authors(soup)
         meta_data['JournalName'] = journal_name
         meta_data['Publisher'] = 'RSC'
